@@ -21,7 +21,7 @@ target_specific_configurations = []
 # target's source files
 #===============================================================================
 
-target_source_files = ['./msufsort.cpp']
+target_source_files = ['./msufsort.cpp', './thread_pool.cpp']
 
 
 #===============================================================================

@@ -8,9 +8,55 @@
 #include <limits>
 
 
+namespace
+{
+
+    class two_byte_symbol_count
+    {
+    public:
+
+        two_byte_symbol_count
+        (
+        ):value_(new int32_t[0x10000])
+        {
+        }
+
+        ~two_byte_symbol_count
+        (
+        )
+        {
+        }
+
+        inline int32_t & operator []
+        (
+            int32_t index
+        )
+        {
+            return value_[index];
+        }
+
+        inline int32_t const & operator []
+        (
+            int32_t index
+        ) const
+        {
+            return value_[index];
+        }
+
+    protected:
+
+    private:
+
+        std::unique_ptr<int32_t []> value_;
+    };
+
+} // namespace
+
+
 //==============================================================================
 maniscalco::msufsort::msufsort
 (
+    int32_t numThreads
 ):
     inputBegin_(nullptr),
     inputEnd_(nullptr),
@@ -19,7 +65,8 @@ maniscalco::msufsort::msufsort
     suffixArrayBegin_(nullptr),
     suffixArrayEnd_(nullptr),
     inverseSuffixArrayBegin_(nullptr),
-    inverseSuffixArrayEnd_(nullptr)
+    inverseSuffixArrayEnd_(nullptr),
+    threadPool_(new thread_pool(numThreads - 1))
 {
 }
 
@@ -29,6 +76,32 @@ maniscalco::msufsort::~msufsort
 (
 )
 {
+}
+
+
+//==============================================================================
+inline auto maniscalco::msufsort::get_suffix_type
+(
+    uint8_t const * suffix
+) -> suffix_type 
+{
+    if ((suffix + 1) >= inputEnd_)
+        return a;
+    if (suffix[0] >= suffix[1])
+    {
+        auto p = suffix + 1;
+        while ((p < inputEnd_) && (*p == suffix[0]))
+            ++p;
+        if ((p == inputEnd_) || (suffix[0] > p[0]))
+            return a;
+        return b;
+    }
+    auto p = suffix + 2;
+    while ((p < inputEnd_) && (*p == suffix[1]))
+        ++p;
+    if ((p == inputEnd_) || (suffix[1] > p[0]))
+        return bStar;
+    return b;
 }
 
 
@@ -76,10 +149,12 @@ inline bool maniscalco::msufsort::compare_suffixes
 //==============================================================================
 inline void maniscalco::msufsort::insertion_sort
 (
+    // private:
+    // sorts the suffixes by insertion sort
     suffix_index * partitionBegin,
     suffix_index * partitionEnd,
     int32_t currentMatchLength,
-    uint64_t //startingPattern  // future use ... when tandem repeat is added to insertion sort
+    uint64_t startingPattern
 )
 {
     struct partition_info
@@ -98,10 +173,39 @@ inline void maniscalco::msufsort::insertion_sort
         auto matchLength = partitionInfo.matchLength_;
         auto size = partitionInfo.size_;
 
-        if (size == 1)
+        if (size <= 2)
         {
-            ++partitionBegin;
+            if (size == 1)
+            {
+                ++partitionBegin;
+            }
+            else
+            {
+                if (compare_suffixes(inputBegin_, partitionBegin[0], partitionBegin[1]) > 0)
+                    std::swap(partitionBegin[0], partitionBegin[1]);
+                partitionBegin += 2;
+            }
             continue;
+        }
+
+        if (tandemRepeatSortEnabled_)
+        {
+            // check for tandem repeats within partition
+            bool potentialTandemRepeats = false;
+            if (matchLength >= min_length_before_tandem_repeat_check)
+            {
+                for (int32_t i = 0; ((!potentialTandemRepeats) && (i < (int32_t)sizeof(uint64_t))); ++i)
+	                potentialTandemRepeats = (get_value(inputBegin_, partitionBegin[0] - i - 1 + matchLength) == startingPattern);
+            }
+            if (potentialTandemRepeats)
+            {
+                // potential for tandem repeats found within this partition
+                if (tandem_repeat_sort(partitionBegin, partitionBegin + size, matchLength, startingPattern))
+                {
+                    partitionBegin += size;
+                    continue;
+                }
+            }
         }
 
         uint64_t value[insertion_sort_threshold];
@@ -136,23 +240,20 @@ inline void maniscalco::msufsort::insertion_sort
 //==============================================================================
 bool maniscalco::msufsort::tandem_repeat_sort
 (
+    // private:
+    // the tandem repeat sort.  determines if the suffixes provided are tandem repeats
+    // of other suffixes from within the same group.  If so, sorts the non tandem
+    // repeat suffixes and then induces the sorted order of the suffixes which are
+    // tandem repeats.
     suffix_index * partitionBegin,
     suffix_index * partitionEnd,
     int32_t currentMatchLength,
     uint64_t startingPattern
 )
 {
-    struct compare_type
-    {
-        inline bool operator()(suffix_index a, suffix_index b) const
-        {
-            return ((a & sa_index_mask) < (b & sa_index_mask));
-        }
-    };
-    std::sort(partitionBegin, partitionEnd, compare_type());  // std sort?? i know, i know ... it's on the todo list ;^)
+    std::sort(partitionBegin, partitionEnd, [](suffix_index a, suffix_index b)->bool{return ((a & sa_index_mask) < (b & sa_index_mask));});
 
     int32_t tandemRepeatLength = 0;
-    bool tandemRepeatFound = false;
     int32_t previousSuffixIndex = std::numeric_limits<int32_t>::max();
     suffix_index * terminatorsBegin = partitionEnd;
 
@@ -163,12 +264,10 @@ bool maniscalco::msufsort::tandem_repeat_sort
 	    auto distanceBetweenSuffixes = (previousSuffixIndex - currentSuffixIndex);
 	    if (distanceBetweenSuffixes < (currentMatchLength >> 1))
 	    {
-		    // Suffix is a tandem repeat
-		    if ((tandemRepeatLength != 0) && (tandemRepeatLength != distanceBetweenSuffixes))
-		        throw std::exception(); // should not be possible ... during development throw logic error - two differnet tandem repeat lengths ...
-		    tandemRepeatFound = true;
+		    // suffix is a tandem repeat
 		    tandemRepeatLength = distanceBetweenSuffixes;
-            inverseSuffixArrayBegin_[currentSuffixIndex >> 1] = (currentTerminatorIndex | is_tandem_repeat_flag);
+            auto flags = (inverseSuffixArrayBegin_[currentSuffixIndex >> 1] & isa_flag_mask);
+            inverseSuffixArrayBegin_[currentSuffixIndex >> 1] = (currentTerminatorIndex | flags | is_tandem_repeat_flag);
 	    }
 	    else
 	    {
@@ -178,7 +277,7 @@ bool maniscalco::msufsort::tandem_repeat_sort
 	    }
 	    previousSuffixIndex = currentSuffixIndex;
     }
-    if (!tandemRepeatFound)
+    if (tandemRepeatLength == 0)
         return false;
 
     // tandem repeats found
@@ -228,12 +327,13 @@ bool maniscalco::msufsort::tandem_repeat_sort
             if (terminatorIndex >= distanceToRepeat)
             {
                 auto potentialTandemRepeatIndex = (terminatorIndex - distanceToRepeat);
-                if (inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1] == (terminatorIndex | is_tandem_repeat_flag))
+                auto isaValue = inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1];
+                if ((isaValue & is_tandem_repeat_flag) && ((isaValue & isa_index_mask) == terminatorIndex))
                 {
                     done = false;
                     auto flag = ((potentialTandemRepeatIndex > 0) && (inputBegin_[potentialTandemRepeatIndex - 1] <= inputBegin_[potentialTandemRepeatIndex])) ? 0 : preceding_suffix_is_type_a_flag;
                     *(++nextRepeatSuffix) = (potentialTandemRepeatIndex | flag);
-                    inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1] = 0;
+                    inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1] &= ~is_tandem_repeat_flag;
                 }
             }
         }
@@ -253,12 +353,13 @@ bool maniscalco::msufsort::tandem_repeat_sort
             if (terminatorIndex >= distanceToRepeat)
             {
                 auto potentialTandemRepeatIndex = (terminatorIndex - distanceToRepeat);
-                if (inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1] == (terminatorIndex | is_tandem_repeat_flag))
+                auto isaValue = inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1];
+                if ((isaValue & is_tandem_repeat_flag) && ((isaValue & isa_index_mask) == terminatorIndex))
                 {
                     done = false;
                     auto flag = ((potentialTandemRepeatIndex > 0) && (inputBegin_[potentialTandemRepeatIndex - 1] <= inputBegin_[potentialTandemRepeatIndex])) ? 0 : preceding_suffix_is_type_a_flag;
                     *(--nextRepeatSuffix) = (potentialTandemRepeatIndex | flag);
-                    inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1] = 0;
+                    inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1] &= ~is_tandem_repeat_flag;
                 }
             }
         }
@@ -270,14 +371,21 @@ bool maniscalco::msufsort::tandem_repeat_sort
 //==============================================================================
 void maniscalco::msufsort::multikey_quicksort
 (
+    // private:
+    // multi key quicksort on the input data provided
     suffix_index * suffixArrayBegin,
     suffix_index * suffixArrayEnd,
     int32_t currentMatchLength,
     uint64_t startingPattern
 )
 {
-    if (std::distance(suffixArrayBegin, suffixArrayEnd) < 2)
-	    return;
+    auto partitionSize = std::distance(suffixArrayBegin, suffixArrayEnd);
+    if (partitionSize < insertion_sort_threshold)
+    {
+        if (partitionSize > 1)
+		    insertion_sort(suffixArrayBegin, suffixArrayEnd, currentMatchLength, startingPattern);
+        return;
+    }
 
     std::vector<partition_info> unsortedPartitions;
     unsortedPartitions.reserve(8192);
@@ -288,7 +396,6 @@ void maniscalco::msufsort::multikey_quicksort
     while (true)
     {
         auto partitionSize = std::distance(partitionBegin, partitionEnd);
-
         if (partitionSize < insertion_sort_threshold)
         {
             if (partitionSize > 1)
@@ -297,7 +404,7 @@ void maniscalco::msufsort::multikey_quicksort
         }
         else
         {
-	        if ((potentialTandemRepeats) && (true))
+	        if ((tandemRepeatSortEnabled_) && (potentialTandemRepeats))
 	        {
                 potentialTandemRepeats = false;
 		        if (!tandem_repeat_sort(partitionBegin, partitionEnd, currentMatchLength, startingPattern))
@@ -500,15 +607,17 @@ void maniscalco::msufsort::multikey_quicksort
 //==========================================================================
 void maniscalco::msufsort::second_stage_its
 (
+    // private:
+    // performs the the second stage of the improved two stage sort.
+    int32_t numThreads
 )
 {
     auto start = std::chrono::system_clock::now();
-
+    // single threaded version 
     // B suffixes from right to left pass
-    auto currentSuffix = (suffixArrayBegin_ + std::distance(inputBegin_, inputEnd_) + 1);
+    auto currentSuffix = (suffixArrayBegin_ + std::distance(inputBegin_, inputEnd_));
     int32_t const * curbackBucketOffset_ = (backBucketOffset_ + 0xffff);
     suffix_index * nextB[0x100];
-
     suffix_index ** previousNextB = nextB;
     uint8_t previousPrecedingSymbol = 0;
     for (int32_t symbol = 0xff; symbol >= 0; --symbol, curbackBucketOffset_ -= 0x100)
@@ -521,7 +630,7 @@ void maniscalco::msufsort::second_stage_its
             auto lastSuffix = currentSuffix - symbolCount;
             while (currentSuffix != lastSuffix)
             {
-                if ((*(--currentSuffix) & preceding_suffix_is_type_a_flag) == 0)
+                if ((*(currentSuffix) & preceding_suffix_is_type_a_flag) == 0)
                 {
                     int32_t precedingSymbolIndex = ((*currentSuffix & sa_index_mask) - 1);
                     auto precedingSymbol = (inputBegin_ + precedingSymbolIndex);
@@ -533,6 +642,7 @@ void maniscalco::msufsort::second_stage_its
                     }
                     *(--(*previousNextB)) = (precedingSymbolIndex | flag);
                 }
+                --currentSuffix;
             }
         }
     }
@@ -542,29 +652,150 @@ void maniscalco::msufsort::second_stage_its
     start = std::chrono::system_clock::now();
 
     // A suffixes from left to right pass
-    auto endSuffixArray = (suffixArrayBegin_ + std::distance(inputBegin_, inputEnd_) + 1);
-    currentSuffix = suffixArrayBegin_ - 1;
-    for (int32_t precedingSymbol = 0; precedingSymbol < 0x100; ++precedingSymbol)
-        nextB[precedingSymbol] = (suffixArrayBegin_ + frontBucketOffset_[precedingSymbol] - 1);    
-
-    while (++currentSuffix != endSuffixArray)
+    if (numThreads > 1)
     {
-        auto currentSuffixIndex = *currentSuffix;
-        if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
+        // multi threaded left to right pass
+        auto endSuffixArray = (suffixArrayBegin_ + std::distance(inputBegin_, inputEnd_) + 1);
+        auto currentSuffix = suffixArrayBegin_;
+        suffix_index * nextB[0x100];
+        for (int32_t precedingSymbol = 0; precedingSymbol < 0x100; ++precedingSymbol)
+            nextB[precedingSymbol] = (suffixArrayBegin_ + frontBucketOffset_[precedingSymbol] - 1);    
+
+        auto max_cache_size = (1 << 12);
+        struct entry_type
         {
-            if ((currentSuffixIndex & sa_index_mask) != 0)
+            uint8_t precedingSymbol_;
+            int32_t precedingSymbolIndex_;
+        };
+        std::unique_ptr<entry_type []> cache[numThreads];
+        for (auto i = 0; i < numThreads; ++i)
+            cache[i].reset(new entry_type[max_cache_size]);
+        int32_t numSuffixes[numThreads] = {};
+        int32_t sCount[numThreads][0x100] = {};
+        suffix_index * dest[numThreads][0x100] = {};
+        while (currentSuffix != endSuffixArray)
+        {
+            // calculate current 'safe' suffixes to process
+            auto begin = currentSuffix;
+            auto maxEnd = begin + (max_cache_size * numThreads);
+            if (maxEnd > endSuffixArray)
+                maxEnd = endSuffixArray;
+            while ((currentSuffix != maxEnd) && ((*currentSuffix != (int32_t)0x80000000) || (currentSuffix == begin)))
+                ++currentSuffix;
+            auto end = currentSuffix;
+            auto totalSuffixes = std::distance(begin, end);
+            auto totalSuffixesPerThread = ((totalSuffixes + numThreads - 1) / numThreads);
+
+            // process suffixes
+            for (auto threadId = 0; threadId < numThreads; ++threadId)
             {
-                int32_t precedingSymbolIndex = ((currentSuffixIndex & sa_index_mask) - 1);
-                auto precedingSymbol = (inputBegin_ + precedingSymbolIndex);
-                int32_t flag = ((precedingSymbol > inputBegin_) && (precedingSymbol[-1] >= precedingSymbol[0])) ? preceding_suffix_is_type_a_flag : 0;
-                if (*precedingSymbol != previousPrecedingSymbol)
+                auto task = []
+                (
+                    uint8_t const * inputBegin,
+                    suffix_index * begin,
+                    suffix_index * end,
+                    entry_type * cache,
+                    int32_t & numSuffixes,
+                    int32_t * suffixCount
+                )
                 {
-                    previousPrecedingSymbol = *precedingSymbol;
-                    previousNextB = nextB + previousPrecedingSymbol;
-                }
-                *(++(*previousNextB)) = (precedingSymbolIndex | flag);
+                    auto current = begin;
+                    while (current != end)
+                    {
+                        auto currentSuffixIndex = *current;
+                        if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
+                        {
+                            if ((currentSuffixIndex & sa_index_mask) != 0)
+                            {
+                                int32_t precedingSymbolIndex = ((currentSuffixIndex & sa_index_mask) - 1);
+                                auto precedingSymbol = (inputBegin + precedingSymbolIndex);
+                                int32_t flag = ((precedingSymbol > inputBegin) && (precedingSymbol[-1] >= precedingSymbol[0])) ? preceding_suffix_is_type_a_flag : 0;
+                                cache[numSuffixes++] = {*precedingSymbol, precedingSymbolIndex | flag};
+                                ++suffixCount[*precedingSymbol];
+                            }
+                            *(current) &= sa_index_mask;
+                        }
+                        ++current;
+                    }
+                };
+                numSuffixes[threadId] = 0;
+                auto endForThisThread = begin + totalSuffixesPerThread;
+                if (endForThisThread > end)
+                    endForThisThread = end;
+                if (threadId == (numThreads - 1))
+                    task(inputBegin_, begin, endForThisThread, cache[threadId].get(), std::ref(numSuffixes[threadId]), sCount[threadId]);
+                else
+                    threadPool_->post_task(threadId, std::bind(task, inputBegin_, begin, endForThisThread, cache[threadId].get(), std::ref(numSuffixes[threadId]), sCount[threadId]));
+                begin = endForThisThread;
             }
-            *(currentSuffix) &= sa_index_mask;
+            threadPool_->wait_for_all_tasks_completed();
+
+            // not worth multi threading this bit ...
+            for (auto threadId = 0; threadId < numThreads; ++threadId)
+            {
+                for (auto symbol = 0; symbol < 0x100; ++symbol)
+                {
+                    dest[threadId][symbol] = nextB[symbol];
+                    nextB[symbol] += sCount[threadId][symbol];
+                    sCount[threadId][symbol] = 0;
+                }
+            }
+
+            // back to multi threading land ...
+            for (auto threadId = 0; threadId < numThreads; ++threadId)
+            {
+                auto task = []
+                (
+                    suffix_index * dest[0x100],
+                    entry_type const * begin,
+                    entry_type const * end
+                )
+                {
+                    while (begin != end)
+                    {
+                        *(++dest[begin->precedingSymbol_]) = begin->precedingSymbolIndex_;
+                        ++begin;
+                    }
+                };
+                if (threadId == (numThreads - 1))
+                    task(dest[threadId], cache[threadId].get(), cache[threadId].get() + numSuffixes[threadId]);
+                else
+                    threadPool_->post_task(threadId, std::bind(task, dest[threadId], cache[threadId].get(), cache[threadId].get() + numSuffixes[threadId]));
+            }
+            threadPool_->wait_for_all_tasks_completed();
+        }
+    }
+    else
+    {
+        // single threaded left to right pass ...
+        // more efficient this way if single threaded
+        auto endSuffixArray = (suffixArrayBegin_ + std::distance(inputBegin_, inputEnd_) + 1);
+        auto currentSuffix = suffixArrayBegin_ - 1;
+        suffix_index * nextB[0x100];
+        suffix_index ** previousNextB = nextB;
+        uint8_t previousPrecedingSymbol = 0;
+        for (int32_t precedingSymbol = 0; precedingSymbol < 0x100; ++precedingSymbol)
+            nextB[precedingSymbol] = (suffixArrayBegin_ + frontBucketOffset_[precedingSymbol] - 1);
+
+        while (++currentSuffix != endSuffixArray)
+        {
+            auto currentSuffixIndex = *currentSuffix;
+            if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
+            {
+                if ((currentSuffixIndex & sa_index_mask) != 0)
+                {
+                    int32_t precedingSymbolIndex = ((currentSuffixIndex & sa_index_mask) - 1);
+                    auto precedingSymbol = (inputBegin_ + precedingSymbolIndex);
+                    int32_t flag = ((precedingSymbol > inputBegin_) && (precedingSymbol[-1] >= precedingSymbol[0])) ? preceding_suffix_is_type_a_flag : 0;
+                    if (*precedingSymbol != previousPrecedingSymbol)
+                    {
+                        previousPrecedingSymbol = *precedingSymbol;
+                        previousNextB = nextB + previousPrecedingSymbol;
+                    }
+                    *(++(*previousNextB)) = (precedingSymbolIndex | flag);
+                }
+                *(currentSuffix) &= sa_index_mask;
+            }
         }
     }
 
@@ -574,125 +805,405 @@ void maniscalco::msufsort::second_stage_its
 
 
 //==========================================================================
-void maniscalco::msufsort::first_stage_its
+int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform
 (
+    // private:
+    // creates the burrows wheeler transform while completing the second stage
+    // of the improved two stage sort.
     int32_t numThreads
 )
 {
     auto start = std::chrono::system_clock::now();
-    std::vector<std::pair<int32_t, int32_t>> partitions;
-    partitions.reserve(0x10000);
-
-    // 16 bit bucket sort
-    int32_t count[0x10000];
-    for (auto & e : count)
-        e = 0;
-    int32_t aCount[0x10000];
-    for (auto & e : aCount)
-        e = 0;
-    int32_t bStarCount[0x10000];
-    for (auto & e : bStarCount)
-        e = 0;
-
-    // count b* bucket sizes (and all bucket sizes)
-    ++aCount[((uint16_t)inputEnd_[-1]) << 8];
-    auto inputCurrent = inputEnd_ - 2;
-
-    while (inputCurrent >= inputBegin_)
+    // B suffixes from right to left pass
+    auto currentSuffix = (suffixArrayBegin_ + std::distance(inputBegin_, inputEnd_) + 1);
+    int32_t const * curbackBucketOffset_ = (backBucketOffset_ + 0xffff);
+    suffix_index * nextB[0x100];
+    suffix_index ** previousNextB = nextB;
+    uint8_t previousPrecedingSymbol = 0;
+    for (int32_t symbol = 0xff; symbol >= 0; --symbol, curbackBucketOffset_ -= 0x100)
     {
-        while ((inputCurrent >= inputBegin_) && (inputCurrent[0] >= inputCurrent[1]))
-            ++aCount[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)inputCurrent--)];
-        if (inputCurrent >= inputBegin_)
-            ++bStarCount[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)inputCurrent)];
-        --inputCurrent;
-        while ((inputCurrent >= inputBegin_) && (inputCurrent[0] <= inputCurrent[1]))
-            ++count[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)inputCurrent--)];
+        int32_t symbolCount = (*curbackBucketOffset_ - ((symbol > 0) ? curbackBucketOffset_[-0x100] : 0));
+        if (symbolCount > 0)
+        {
+            for (int32_t precedingSymbol = 0; precedingSymbol < 0x100; ++precedingSymbol)
+                nextB[precedingSymbol] = (suffixArrayBegin_ + backBucketOffset_[(precedingSymbol << 8) | symbol]);
+            auto lastSuffix = currentSuffix - symbolCount;
+            while (currentSuffix != lastSuffix)
+            {
+                int32_t precedingSymbolIndex = ((*(--currentSuffix) & sa_index_mask) - 1);
+                auto precedingSymbol = (inputBegin_ + precedingSymbolIndex);
+                if ((*currentSuffix & preceding_suffix_is_type_a_flag) == 0)
+                {
+                    int32_t flag = ((precedingSymbol > inputBegin_) && (precedingSymbol[-1] <= precedingSymbol[0])) ? 0 : preceding_suffix_is_type_a_flag;
+                    if (*precedingSymbol != previousPrecedingSymbol)
+                    {
+                        previousPrecedingSymbol = *precedingSymbol;
+                        previousNextB = nextB + previousPrecedingSymbol;
+                    }
+                    *(--(*previousNextB)) = (precedingSymbolIndex | flag);
+                    *currentSuffix = *precedingSymbol;
+                }
+            }
+        }
     }
 
+    auto finish = std::chrono::system_clock::now();
+    std::cout << "second stage right to left pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+    start = std::chrono::system_clock::now();
+
+    // A suffixes from left to right pass
+    auto * sentinel = suffixArrayBegin_;
+    if (numThreads > 1)
+    {
+        // multi threaded left to right pass
+        auto endSuffixArray = (suffixArrayBegin_ + std::distance(inputBegin_, inputEnd_) + 1);
+        auto currentSuffix = suffixArrayBegin_;
+        suffix_index * nextB[0x100];
+        for (int32_t precedingSymbol = 0; precedingSymbol < 0x100; ++precedingSymbol)
+            nextB[precedingSymbol] = (suffixArrayBegin_ + frontBucketOffset_[precedingSymbol] - 1);    
+
+        auto max_cache_size = (1 << 12);
+        struct entry_type
+        {
+            uint8_t precedingSymbol_;
+            int32_t precedingSymbolIndex_;
+        };
+        std::unique_ptr<entry_type []> cache[numThreads];
+        for (auto i = 0; i < numThreads; ++i)
+            cache[i].reset(new entry_type[max_cache_size]);
+        int32_t numSuffixes[numThreads] = {};
+        int32_t sCount[numThreads][0x100] = {};
+        suffix_index * dest[numThreads][0x100] = {};
+        while (currentSuffix != endSuffixArray)
+        {
+            // calculate current 'safe' suffixes to process
+            auto begin = currentSuffix;
+            auto maxEnd = begin + (max_cache_size * numThreads);
+            if (maxEnd > endSuffixArray)
+                maxEnd = endSuffixArray;
+            while ((currentSuffix != maxEnd) && ((*currentSuffix != (int32_t)0x80000000) || (currentSuffix == begin)))
+                ++currentSuffix;
+            auto end = currentSuffix;
+            auto totalSuffixes = std::distance(begin, end);
+            auto totalSuffixesPerThread = ((totalSuffixes + numThreads - 1) / numThreads);
+
+            // process suffixes
+            for (auto threadId = 0; threadId < numThreads; ++threadId)
+            {
+                auto task = [&sentinel]
+                (
+                    uint8_t const * inputBegin,
+                    suffix_index * begin,
+                    suffix_index * end,
+                    entry_type * cache,
+                    int32_t & numSuffixes,
+                    int32_t * suffixCount
+                )
+                {
+                    auto current = begin;
+                    while (current != end)
+                    {
+                        auto currentSuffixIndex = *current;
+                        if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
+                        {
+                            int32_t precedingSymbolIndex = ((currentSuffixIndex & sa_index_mask) - 1);
+                            auto precedingSymbol = (inputBegin + precedingSymbolIndex);
+                            if ((currentSuffixIndex & sa_index_mask) != 0)
+                            {
+                                int32_t flag = ((precedingSymbol > inputBegin) && (precedingSymbol[-1] >= precedingSymbol[0])) ? preceding_suffix_is_type_a_flag : 0;
+                                if (flag)
+                                    cache[numSuffixes++] = {precedingSymbol[0], precedingSymbolIndex | flag};
+                                else
+                                    cache[numSuffixes++] = {precedingSymbol[0], precedingSymbol[-1]};
+                                ++suffixCount[*precedingSymbol];
+                            }
+                            if (precedingSymbol >= inputBegin)
+                                *current = precedingSymbol[0];
+                            else
+                                sentinel = current;
+                        }
+                        ++current;
+                    }
+                };
+                numSuffixes[threadId] = 0;
+                auto endForThisThread = begin + totalSuffixesPerThread;
+                if (endForThisThread > end)
+                    endForThisThread = end;
+                if (threadId == (numThreads - 1))
+                    task(inputBegin_, begin, endForThisThread, cache[threadId].get(), std::ref(numSuffixes[threadId]), sCount[threadId]);
+                else
+                    threadPool_->post_task(threadId, std::bind(task, inputBegin_, begin, endForThisThread, cache[threadId].get(), std::ref(numSuffixes[threadId]), sCount[threadId]));
+                begin = endForThisThread;
+            }
+            threadPool_->wait_for_all_tasks_completed();
+
+            // not worth multi threading this bit ...
+            for (auto threadId = 0; threadId < numThreads; ++threadId)
+            {
+                for (auto symbol = 0; symbol < 0x100; ++symbol)
+                {
+                    dest[threadId][symbol] = nextB[symbol];
+                    nextB[symbol] += sCount[threadId][symbol];
+                    sCount[threadId][symbol] = 0;
+                }
+            }
+
+            // back to multi threading land ...
+            for (auto threadId = 0; threadId < numThreads; ++threadId)
+            {
+                auto task = []
+                (
+                    suffix_index * dest[0x100],
+                    entry_type const * begin,
+                    entry_type const * end
+                )
+                {
+                    while (begin != end)
+                    {
+                        *(++dest[begin->precedingSymbol_]) = begin->precedingSymbolIndex_;
+                        ++begin;
+                    }
+                };
+                if (threadId == (numThreads - 1))
+                    task(dest[threadId], cache[threadId].get(), cache[threadId].get() + numSuffixes[threadId]);
+                else
+                    threadPool_->post_task(threadId, std::bind(task, dest[threadId], cache[threadId].get(), cache[threadId].get() + numSuffixes[threadId]));
+            }
+            threadPool_->wait_for_all_tasks_completed();
+        }
+
+        for (auto i = 0; i < inputSize_; ++i)
+            if (suffixArrayBegin_[i] & 0x80000000)
+                int y = 9;
+    }
+    else
+    {
+        // single threaded version 
+        // A suffixes from left to right pass
+        auto endSuffixArray = (suffixArrayBegin_ + std::distance(inputBegin_, inputEnd_) + 1);
+        currentSuffix = suffixArrayBegin_ - 1;
+        for (int32_t precedingSymbol = 0; precedingSymbol < 0x100; ++precedingSymbol)
+            nextB[precedingSymbol] = (suffixArrayBegin_ + frontBucketOffset_[precedingSymbol] - 1);    
+
+        while (++currentSuffix != endSuffixArray)
+        {
+            auto currentSuffixIndex = *currentSuffix;
+            if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
+            {
+                int32_t precedingSymbolIndex = ((currentSuffixIndex & sa_index_mask) - 1);
+                auto precedingSymbol = (inputBegin_ + precedingSymbolIndex);
+                if ((currentSuffixIndex & sa_index_mask) != 0)
+                {
+                    int32_t flag = ((precedingSymbol > inputBegin_) && (precedingSymbol[-1] >= precedingSymbol[0])) ? preceding_suffix_is_type_a_flag : 0;
+                    if (*precedingSymbol != previousPrecedingSymbol)
+                    {
+                        previousPrecedingSymbol = *precedingSymbol;
+                        previousNextB = nextB + previousPrecedingSymbol;
+                    }
+                    if (flag)
+                        *(++(*previousNextB)) = (precedingSymbolIndex | flag);
+                    else
+                        if (precedingSymbol > inputBegin_)
+                            *(++(*previousNextB)) = precedingSymbol[-1];
+                }
+                if (precedingSymbol >= inputBegin_)
+                    *currentSuffix = *precedingSymbol;
+                else
+                    sentinel = currentSuffix;
+            }
+        }
+    }
+
+    int32_t sentinelIndex = (int32_t)std::distance(suffixArrayBegin_, sentinel);
+    finish = std::chrono::system_clock::now();
+    std::cout << "second stage left to right pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+    return sentinelIndex;
+}
+
+
+//==========================================================================
+void maniscalco::msufsort::first_stage_its
+(
+    // private:
+    // does the first stage of the improved two stage sort
+    int32_t numThreads
+)
+{
+    auto start = std::chrono::system_clock::now();
+    two_byte_symbol_count count;
+    two_byte_symbol_count aCount;
+    two_byte_symbol_count bStarCount[numThreads];
+    two_byte_symbol_count threadCount[numThreads];
+    two_byte_symbol_count threadACount[numThreads];
+    auto numSuffixesPerThread = ((inputSize_ + numThreads - 1) / numThreads);
+
+    // multi threaded count of suffix types
+    auto inputCurrent = inputBegin_;
+    for (auto threadId = 0; threadId < numThreads; ++threadId)
+    {
+        auto threadFunction = [&]
+        (
+            uint8_t const * begin,
+            uint8_t const * end,
+            two_byte_symbol_count & count,
+            two_byte_symbol_count & aCount,
+            two_byte_symbol_count & bStarCount
+        )
+        {
+            if (begin < end)
+                return;
+            auto current = begin;
+            auto suffixType = get_suffix_type(current);
+            if (suffixType == suffix_type::bStar)
+            {
+                int32_t i = (std::distance(inputBegin_, current) >> 1);
+                inverseSuffixArrayBegin_[i >> 1] |= is_bstar_suffix_flag;
+                ++bStarCount[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current--)];
+            }
+            if ((suffixType == suffix_type::bStar) || (suffixType == suffix_type::b))
+                while ((current >= end) && (current[0] <= current[1]))
+                    ++count[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current--)];
+            while (current >= end)
+            {
+                while ((current >= end) && (current[0] >= current[1]))
+                    ++aCount[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current--)];
+                if (current >= end)
+                {
+                    int32_t i = (std::distance(inputBegin_, current) >> 1);
+                    inverseSuffixArrayBegin_[i >> 1] |= is_bstar_suffix_flag;
+                    ++bStarCount[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current--)];
+                }
+                while ((current >= end) && (current[0] <= current[1]))
+                    ++count[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current--)];
+            }
+        };
+        auto inputEnd = inputCurrent + numSuffixesPerThread;
+        if (inputEnd >= (inputEnd_ - 1))
+            inputEnd = (inputEnd_ - 1);
+        if (threadId == (numThreads - 1))
+            threadFunction(inputEnd - 1, inputCurrent, std::ref(threadCount[threadId]), std::ref(threadACount[threadId]), std::ref(bStarCount[threadId]));
+        else
+            threadPool_->post_task(threadId, std::bind(threadFunction, inputEnd - 1, inputCurrent, std::ref(threadCount[threadId]), 
+                    std::ref(threadACount[threadId]), std::ref(bStarCount[threadId])));
+        inputCurrent = inputEnd;
+    }
+    threadPool_->wait_for_all_tasks_completed();
+
+    // not worth multi threading this next bit
+    ++aCount[((uint16_t)inputEnd_[-1]) << 8];
+    for (auto threadId = 0; threadId < numThreads; ++threadId)
+    {
+        for (auto j = 0; j < 0x10000; ++j)
+        {
+            count[j] += threadCount[threadId][j];
+            aCount[j] += threadACount[threadId][j];
+        }
+    }
     // compute bucket offsets into suffix array
     int32_t total = 1;  // 1 for sentinel
     int32_t bStarTotal = 0;
-    int32_t bStarOffset[0x10000];
+    two_byte_symbol_count totalBStarCount;
+    two_byte_symbol_count bStarOffset[numThreads];
+    std::pair<int32_t, int32_t> partitions[0x10000];
+    auto numPartitions = 0;
     for (int32_t i = 0; i < 0x100; ++i)
     {
         int32_t s = (i << 8);
         frontBucketOffset_[i] = total;
         for (int32_t j = 0; j < 0x100; ++j, ++s)
         {
-            if (bStarCount[s] > 0)
-                partitions.push_back(std::make_pair(bStarTotal, bStarCount[s]));
-            bStarOffset[s] = bStarTotal;
-            bStarTotal += bStarCount[s];
-
-            count[s] += (aCount[s] + bStarCount[s]);
+            auto partitionStartIndex = bStarTotal;
+            count[s] += aCount[s];
+            for (int32_t threadId = 0; threadId < numThreads; ++threadId)
+            {
+                bStarOffset[threadId][s] = bStarTotal;
+                totalBStarCount[s] += bStarCount[threadId][s];
+                bStarTotal += bStarCount[threadId][s];
+                count[s] += bStarCount[threadId][s];
+            }
             total += count[s];
             backBucketOffset_[s] = total;
+            if (totalBStarCount[s] > 0)
+                partitions[numPartitions++] = std::make_pair(partitionStartIndex, totalBStarCount[s]);
         }
     }
 
-    // place b* in suffix array (at front)
-    inputCurrent = inputEnd_ - 2;
-    while (inputCurrent >= inputBegin_)
+    // back to multi-threaded land ...
+    // multi threaded first pass 2 byte sort
+    inputCurrent = inputBegin_;
+    for (auto threadId = 0; threadId < numThreads; ++threadId)
     {
-        while ((inputCurrent >= inputBegin_) && (inputCurrent[0] >= inputCurrent[1]))
-            --inputCurrent;
-        if (inputCurrent >= inputBegin_)
+        auto threadFunction = [&]
+        (
+            uint8_t const * begin,
+            uint8_t const * end,
+            two_byte_symbol_count & bStarOffset
+        )
         {
-            int32_t flag = ((inputCurrent > inputBegin_) && (inputCurrent[-1] <= inputCurrent[0])) ? 0 : preceding_suffix_is_type_a_flag;
-            suffixArrayBegin_[bStarOffset[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)inputCurrent)]++] = 
-                        (std::distance(inputBegin_, inputCurrent) | flag);
-        }
-        while ((inputCurrent >= inputBegin_) && (inputCurrent[0] <= inputCurrent[1]))
-            --inputCurrent;
+            if (inputCurrent < end)
+                return;
+            auto current = begin;
+            auto suffixType = get_suffix_type(current);
+            if (suffixType == suffix_type::bStar)
+            {
+                int32_t flag = ((current > inputBegin_) && (current[-1] <= current[0])) ? 0 : preceding_suffix_is_type_a_flag;
+                suffixArrayBegin_[bStarOffset[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current)]++] = (std::distance(inputBegin_, current) | flag);
+            }
+            if ((suffixType == suffix_type::bStar) || (suffixType == suffix_type::b))
+                while ((current >= end) && (current[0] <= current[1]))
+                    --current;
+            while (current >= end)
+            {
+                while ((current >= end) && (current[0] >= current[1]))
+                    --current;
+                if (current >= end)
+                {
+                    int32_t flag = ((current > inputBegin_) && (current[-1] <= current[0])) ? 0 : preceding_suffix_is_type_a_flag;
+                    suffixArrayBegin_[bStarOffset[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current)]++] = 
+                                (std::distance(inputBegin_, current) | flag);
+                }
+                while ((current >= end) && (current[0] <= current[1]))
+                    --current;
+            }
+        };
+        auto inputEnd = inputCurrent + numSuffixesPerThread;
+        if (inputEnd >= (inputEnd_ - 1))
+            inputEnd = (inputEnd_ - 1);
+        if (threadId == (numThreads - 1))
+            threadFunction(inputEnd - 1, inputCurrent, std::ref(bStarOffset[threadId]));
+        else
+            threadPool_->post_task(threadId, std::bind(threadFunction, inputEnd - 1, inputCurrent, std::ref(bStarOffset[threadId])));
+        inputCurrent = inputEnd;
     }
+    threadPool_->wait_for_all_tasks_completed();
 
     auto finish = std::chrono::system_clock::now();
-    std::cout << "direct sort initialization time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+    std::cout << "direct sort initial 16 bit sort time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
     start = std::chrono::system_clock::now();
-
-    std::vector<std::thread> threads;
-    std::atomic<int32_t> partitionCount(partitions.size());
-    for (int32_t i = 0; i < numThreads; ++i)
+    
+    // now for the multikey quicksort on the B* 
+    // this bit is easy to multi thread
+    std::atomic<int32_t> partitionCount(numPartitions);
+    for (auto threadId = 0; threadId < numThreads; ++threadId)
     {
         auto task = [&]()
         {
             while (true)
             {
-                auto j = partitionCount--;
-                if (j < 0)
+                auto partitionIndex = partitionCount--;
+                if (partitionIndex < 0)
                     break;
-                auto partition = partitions[j];
+                auto partition = partitions[partitionIndex];
                 if (partition.second > 1)
-                {
-                    multikey_quicksort(suffixArrayBegin_ + partition.first, 
-                            suffixArrayBegin_ + partition.first + partition.second, 2, 0);
-                }
+                    multikey_quicksort(suffixArrayBegin_ + partition.first, suffixArrayBegin_ + partition.first + partition.second, 2, 0);
             }
         };
-        threads.push_back(std::move(std::thread(task)));
+        if (threadId == (numThreads - 1))
+            task();
+        else
+            threadPool_->post_task(threadId, task);
     }
-    for (auto & e : threads)
-        e.join();
-
-    // sort dependent b*
-    auto cur = suffixArrayBegin_;
-    auto endCur = cur + bStarTotal;
-    while (cur != endCur)
-    {
-        while ((cur != endCur) && ((*cur & 0x40000000) == 0))
-            ++cur;
-        if (cur != endCur)
-        {
-            auto begin = cur;
-            while ((cur != endCur) && (*cur & 0x40000000))
-            {
-                *cur &= ~0x40000000;
-                ++cur;
-            }
-            ++cur;
-            std::sort(begin, cur);
-        }
-    }
+    threadPool_->wait_for_all_tasks_completed();
 
     // spread b* to their final locations in suffix array
     auto destination = suffixArrayBegin_ + total;
@@ -703,10 +1214,10 @@ void maniscalco::msufsort::first_stage_its
         {
             auto bCount = (count[i] - aCount[i]);
             destination -= bCount;
-            source -= bStarCount[i];
-            for (auto j = bStarCount[i] - 1; j >= 0; --j)
+            source -= totalBStarCount[i];
+            for (auto j = totalBStarCount[i] - 1; j >= 0; --j)
                 destination[j] = source[j];
-            for (auto j = bStarCount[i]; j < bCount; ++j)
+            for (auto j = totalBStarCount[i]; j < bCount; ++j)
                 destination[j] = preceding_suffix_is_type_a_flag;
             destination -= aCount[i];
             for (auto j = 0; j < aCount[i]; ++j)
@@ -721,16 +1232,26 @@ void maniscalco::msufsort::first_stage_its
 
 
 //==============================================================================
-maniscalco::msufsort::suffix_array maniscalco::msufsort::make_suffix_array
+auto maniscalco::msufsort::make_suffix_array
 (
+    // public:
+    // computes the suffix array for the input data
     uint8_t const * inputBegin,
     uint8_t const * inputEnd,
     int32_t numThreads
-)
+) -> suffix_array
 {
     inputBegin_ = inputBegin;
     inputEnd_ = inputEnd;
     inputSize_ = std::distance(inputBegin_, inputEnd_);
+
+    if (numThreads < 1)
+        numThreads = 1;
+    if (numThreads > (int32_t)std::thread::hardware_concurrency())
+        numThreads = (int32_t)std::thread::hardware_concurrency();
+    if (numThreads > inputSize_)
+        numThreads = inputSize_;
+
     getValueEnd_ = (inputEnd_ - sizeof(uint64_t));
     getValueMaxIndex_ = (inputSize_ - sizeof(uint64_t));
     for (auto & e : copyEnd_)
@@ -739,22 +1260,120 @@ maniscalco::msufsort::suffix_array maniscalco::msufsort::make_suffix_array
     if (source < inputBegin_)
         source = inputBegin_;
     std::copy(source, inputEnd_, copyEnd_);
-
     suffix_array suffixArray;
     auto suffixArraySize = (inputSize_ + 1);
     suffixArray.resize(suffixArraySize);
     for (auto & e : suffixArray)
         e = 0;
-
     suffixArrayBegin_ = suffixArray.data();
     suffixArrayEnd_ = suffixArrayBegin_ + suffixArraySize;
-
     inverseSuffixArrayBegin_ = (suffixArrayBegin_ + ((inputSize_ + 1) >> 1));
     inverseSuffixArrayEnd_ = suffixArrayEnd_;
 
     first_stage_its(numThreads);
-    second_stage_its();
-
+    second_stage_its(numThreads);
     return suffixArray;
 }
 
+
+//==============================================================================
+int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
+(
+    // public:
+    // computes the burrows wheeler transform for the input data and
+    // replaces the input data with that transformed result.
+    // returns the index of the sentinel character (which is removed from the
+    // transformed data).
+    uint8_t * inputBegin,
+    uint8_t * inputEnd,
+    int32_t numThreads
+)
+{
+    inputBegin_ = inputBegin;
+    inputEnd_ = inputEnd;
+    inputSize_ = std::distance(inputBegin_, inputEnd_);
+
+    if (numThreads < 1)
+        numThreads = 1;
+    if (numThreads > (int32_t)std::thread::hardware_concurrency())
+        numThreads = (int32_t)std::thread::hardware_concurrency();
+    if (numThreads > inputSize_)
+        numThreads = inputSize_;
+
+    getValueEnd_ = (inputEnd_ - sizeof(uint64_t));
+    getValueMaxIndex_ = (inputSize_ - sizeof(uint64_t));
+    for (auto & e : copyEnd_)
+        e = 0x00;
+    auto source = inputEnd_ - sizeof(uint64_t);
+    if (source < inputBegin_)
+        source = inputBegin_;
+    std::copy(source, inputEnd_, copyEnd_);
+    suffix_array suffixArray;
+    auto suffixArraySize = (inputSize_ + 1);
+    suffixArray.resize(suffixArraySize);
+    for (auto & e : suffixArray)
+        e = 0;
+    suffixArrayBegin_ = suffixArray.data();
+    suffixArrayEnd_ = suffixArrayBegin_ + suffixArraySize;
+    inverseSuffixArrayBegin_ = (suffixArrayBegin_ + ((inputSize_ + 1) >> 1));
+    inverseSuffixArrayEnd_ = suffixArrayEnd_;
+
+    first_stage_its(numThreads);
+    int32_t sentinelIndex = second_stage_its_as_burrows_wheeler_transform(numThreads);
+    for (int32_t i = 0; i < (inputSize_ + 1); ++i)
+    {
+        if (i != sentinelIndex)
+            *inputBegin++ = (uint8_t)suffixArray[i];
+    }
+    return sentinelIndex;
+}
+
+
+//==============================================================================
+void maniscalco::msufsort::reverse_burrows_wheeler_transform
+(
+    // public:
+    // reverse the input (which is a BWT with sentinel symbol removed at index provided).
+    // overwrites the input data with the reverse transformed data.
+    uint8_t * inputBegin,
+    uint8_t * inputEnd,
+    int32_t sentinelIndex
+)
+{
+    auto inputSize = std::distance(inputBegin, inputEnd);
+    std::vector<suffix_index> index;
+    index.resize(inputSize + 1);
+	int32_t symbolRange[0x102];
+	for (auto & e : symbolRange)
+		e = 0;
+
+	symbolRange[0] = 1;
+	for (auto inputCurent = inputBegin; inputCurent < inputEnd; ++inputCurent)
+		symbolRange[((uint32_t)*inputCurent) + 1]++;
+
+	int32_t n = 0;
+	for (auto & e : symbolRange)
+	{
+		auto temp = e;
+		e = n;
+		n += temp;
+	}
+
+	n = 0;
+	index[0] = sentinelIndex;
+	for (int32_t i = 0; i < inputSize; i++, n++)
+	{
+		n += (i == sentinelIndex);
+		index[symbolRange[(uint32_t)inputBegin[i] + 1]++] = n;
+	}
+	n = sentinelIndex;
+	std::vector<uint8_t> reversedBuffer;
+    reversedBuffer.resize(inputSize);
+	for (auto & e : reversedBuffer)
+	{
+		n = index[n];
+		e = inputBegin[n - (n >= sentinelIndex)];
+	}
+    for (auto e : reversedBuffer)
+        *(inputBegin++) = e;
+}
