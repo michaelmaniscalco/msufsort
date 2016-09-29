@@ -2,7 +2,10 @@
 
 #include <vector>
 #include <stdint.h>
-#include "./thread_pool.h"
+#include <atomic>
+#include <thread>
+#include <memory>
+#include <functional>
 
 
 namespace maniscalco
@@ -17,7 +20,7 @@ namespace maniscalco
 
         msufsort
         (
-            int32_t
+            int32_t = 1
         );
 
         ~msufsort();
@@ -25,15 +28,13 @@ namespace maniscalco
         suffix_array make_suffix_array
         (
 	        uint8_t const *,
-            uint8_t const *,
-            int32_t
+            uint8_t const *
         );
 
         int32_t forward_burrows_wheeler_transform
         (
 	        uint8_t *,
-            uint8_t *,
-            int32_t
+            uint8_t *
         );
 
         void reverse_burrows_wheeler_transform
@@ -109,20 +110,11 @@ namespace maniscalco
             uint64_t
         );
 
-        void second_stage_its
-        (
-            int32_t
-        );
+        void second_stage_its();
 
-        int32_t second_stage_its_as_burrows_wheeler_transform
-        (
-            int32_t
-        );
+        int32_t second_stage_its_as_burrows_wheeler_transform();
 
-        void first_stage_its
-        (
-            int32_t
-        );
+        void first_stage_its();
 
         void multikey_quicksort
         (
@@ -158,7 +150,83 @@ namespace maniscalco
 
         bool const      tandemRepeatSortEnabled_ = true;
 
-        std::unique_ptr<thread_pool>    threadPool_;
+        class worker_thread
+        {
+        public:
+
+            worker_thread
+            (
+            ):
+                thread_(), 
+                task_(), 
+                terminate_(false),
+                taskCompleted_(true)
+            {
+                auto workFunction = []
+                (
+                    std::function<void()> & task,
+                    bool volatile & taskComplete,
+                    bool volatile & terminate
+                )
+                {
+                    while (taskComplete)
+                        ;
+                    while (!terminate)
+                    {
+                        task();
+                        taskComplete = true;
+                        while (taskComplete)
+                            ;
+                    } 
+                };
+                thread_ = std::thread(workFunction, std::ref(task_), std::ref(taskCompleted_), std::ref(terminate_));
+            }
+
+            ~worker_thread
+            (
+            )
+            {
+                terminate();
+                thread_.join();
+            }
+
+            void terminate
+            (
+            )
+            {
+                terminate_ = true;
+                taskCompleted_ = false;
+            }
+
+            template <typename ... argument_types>
+            inline void post_task
+            (
+                argument_types && ... arguments
+            )
+            {
+                task_ = std::bind(std::forward<argument_types>(arguments) ...);
+                taskCompleted_ = false;
+            }
+
+            inline void wait
+            (
+            ) const
+            {
+                while (!taskCompleted_)
+                    ;
+            }
+
+        private:
+
+            std::thread thread_;
+            std::function<void()> task_;
+            bool volatile terminate_;
+            bool volatile taskCompleted_;
+        };
+
+        std::unique_ptr<worker_thread []> workerThreads_;
+
+        int32_t numWorkerThreads_;
 
     }; // class msufsort
 
@@ -184,8 +252,7 @@ namespace maniscalco
     (
         input_iter,
         input_iter,
-        int32_t,
-        int32_t = 1
+        int32_t
     );
 
 } // namespace maniscalco
@@ -200,7 +267,7 @@ maniscalco::msufsort::suffix_array maniscalco::make_suffix_array
     int32_t numThreads
 )
 {
-    return msufsort(numThreads).make_suffix_array((uint8_t const *)&*begin, (uint8_t const *)&*end, numThreads);
+    return msufsort(numThreads).make_suffix_array((uint8_t const *)&*begin, (uint8_t const *)&*end);
 }
 
 
@@ -213,7 +280,7 @@ int32_t maniscalco::forward_burrows_wheeler_transform
     int32_t numThreads
 )
 {
-    return msufsort(numThreads).forward_burrows_wheeler_transform((uint8_t *)&*begin, (uint8_t *)&*end, numThreads);
+    return msufsort(numThreads).forward_burrows_wheeler_transform((uint8_t *)&*begin, (uint8_t *)&*end);
 }
 
 
@@ -223,9 +290,8 @@ void maniscalco::reverse_burrows_wheeler_transform
 (
     input_iter begin,
     input_iter end,
-    int32_t sentinelIndex,
-    int32_t numThreads
+    int32_t sentinelIndex
 )
 {
-    msufsort(numThreads).reverse_burrows_wheeler_transform((uint8_t *)&*begin, (uint8_t *)&*end, sentinelIndex);
+    msufsort().reverse_burrows_wheeler_transform((uint8_t *)&*begin, (uint8_t *)&*end, sentinelIndex);
 }

@@ -27,6 +27,11 @@ std::vector<int8_t> load_file
         inputStream.read((char *)input.data(), input.size());
         inputStream.close();
     }
+    else
+    {
+        std::cout << "failed to load file: " << inputPath << std::endl;
+        throw std::exception();
+    }
     return input;
 }
 
@@ -118,6 +123,15 @@ int32_t validate
 }
 
 
+//==============================================================================
+void print_usage
+(
+)
+{
+    std::cout << "invalid arguments" << std::endl;
+    std::cout << "usage: msufsort [b|s] input [num threads]" << std::endl;
+}
+
 
 //==============================================================================
 int32_t main
@@ -128,48 +142,108 @@ int32_t main
 {
     try
     {
-        std::string inputPath = inputArguments[1];
+        if (argumentCount < 3)
+        {
+            print_usage();
+            return 0;
+        }
+
+        enum task_type
+        {
+            burrows_wheeler_transform,
+            suffix_array,
+            invalid
+        };
+
+        task_type taskType = invalid;
+        
+        std::string task(inputArguments[1]);
+        if ((task == "b") || (task == "B"))
+            taskType = burrows_wheeler_transform;
+        if ((task == "s") || (task == "s"))
+            taskType = suffix_array;
+        if (taskType == invalid)
+        {
+            print_usage();
+            return 0;
+        }
+
+        std::string inputPath = inputArguments[2];
         std::vector<int8_t> input = load_file(inputPath);
 
         int32_t inputSize = input.size();
-        std::cout << "=============================================================================================" << std::endl;
-        std::cout << "msufsort 4a " << std::endl;
-        std::cout << "**** this is a pre-release demo **** - this version is incomplete and lacks induction sorting" << std::endl;
-        std::cout << "=============================================================================================" << std::endl << std::endl;
+        std::cout << "================================================================" << std::endl;
+        std::cout << "msufsort - version 4a-demo" << std::endl;
+        std::cout << "author: Michael A Maniscalco" << std::endl;
+        std::cout << "**** this is a pre-release demo ****" << std::endl;
+        std::cout << "**** this version is incomplete and lacks induction sorting ****" << std::endl;
+        std::cout << "================================================================" << std::endl << std::endl;
 
-        std::cout << inputSize << " bytes loaded" << std::endl;
+        std::cout << "loaded " << inputSize << " bytes" << std::endl;
 
         auto numWorkerThreads = 1;
-        if (argumentCount >= 3)
+        if (argumentCount >= 4)
         {
             try
             {
-                numWorkerThreads = std::stoi(inputArguments[2]);
+                numWorkerThreads = std::stoi(inputArguments[3]);
             }
             catch (...)
             {
-                std::cout << "INVALID THREAD COUNT: " << inputArguments[2] << std::endl;
+                std::cout << "INVALID THREAD COUNT: " << inputArguments[3] << std::endl;
                 throw std::exception();
             }
         }
 
-        std::cout << "thread count = " << numWorkerThreads << std::endl;
         auto start = std::chrono::system_clock::now();
-        auto suffixArray = ::maniscalco::make_suffix_array(input.begin(), input.end(), numWorkerThreads);
-        auto finish = std::chrono::system_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start);
-        std::cout << "suffix array completed - total elapsed time: " << elapsed.count() << " ms" << std::endl;
+        switch (taskType)
+        {
+            case suffix_array:
+            {
+                std::cout << "computing suffix array" << std::endl;
+                auto suffixArray = ::maniscalco::make_suffix_array(input.begin(), input.end(), numWorkerThreads);
+                auto finish = std::chrono::system_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start);
+                std::cout << "suffix array completed - total elapsed time: " << elapsed.count() << " ms" << std::endl;
 
-        // validate 
-        std::cout << "validating suffix array" << std::endl;
-        auto errorCount = validate(input.data(), suffixArray.data(), suffixArray.data() + suffixArray.size());
-        if (errorCount)
-            std::cout << "**** ERRORS DETECTED (" << errorCount << ") **** " << std::endl;
-        else
-            std::cout << "test completed and results validated successfully" << std::endl;
+                // validate 
+                std::cout << "validating suffix array" << std::endl;
+                auto errorCount = validate(input.data(), suffixArray.data(), suffixArray.data() + suffixArray.size());
+                if (errorCount)
+                    std::cout << "**** ERRORS DETECTED (" << errorCount << ") **** " << std::endl;
+                else
+                    std::cout << "test completed and results validated successfully" << std::endl;
+                break;
+            }
+
+            case burrows_wheeler_transform:
+            {
+                auto copyOfInput = input;
+                std::cout << "computing burrows wheeler transform" << std::endl;
+                auto sentinelIndex = ::maniscalco::forward_burrows_wheeler_transform(input.begin(), input.end(), numWorkerThreads);
+                auto finish = std::chrono::system_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start);
+                std::cout << "burrows wheeler transform completed - total elapsed time: " << elapsed.count() << " ms" << std::endl;
+
+                // validate
+                ::maniscalco::reverse_burrows_wheeler_transform(input.begin(), input.end(), sentinelIndex);
+                if (input != copyOfInput)
+                    std::cout << "**** BWT ERROR DETECTED" << std::endl;
+                else
+                    std::cout << "test completed and results validated successfully" << std::endl;
+                break;
+            }
+
+            default:
+            {
+                print_usage();
+                break;
+            }
+        }
     }
     catch (...)
     {
+        std::cout << "caught exception" << std::endl;
     }
 
     return 0;

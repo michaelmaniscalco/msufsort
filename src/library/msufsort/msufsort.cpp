@@ -66,7 +66,8 @@ maniscalco::msufsort::msufsort
     suffixArrayEnd_(nullptr),
     inverseSuffixArrayBegin_(nullptr),
     inverseSuffixArrayEnd_(nullptr),
-    threadPool_(new thread_pool(numThreads - 1))
+    workerThreads_(new worker_thread[numThreads - 1]),
+    numWorkerThreads_(numThreads - 1)
 {
 }
 
@@ -609,7 +610,6 @@ void maniscalco::msufsort::second_stage_its
 (
     // private:
     // performs the the second stage of the improved two stage sort.
-    int32_t numThreads
 )
 {
     auto start = std::chrono::system_clock::now();
@@ -652,9 +652,10 @@ void maniscalco::msufsort::second_stage_its
     start = std::chrono::system_clock::now();
 
     // A suffixes from left to right pass
-    if (numThreads > 1)
+    if (numWorkerThreads_ > 0)
     {
         // multi threaded left to right pass
+        auto numThreads = (int32_t)(numWorkerThreads_ + 1); // +1 for main thread
         auto endSuffixArray = (suffixArrayBegin_ + std::distance(inputBegin_, inputEnd_) + 1);
         auto currentSuffix = suffixArrayBegin_;
         suffix_index * nextB[0x100];
@@ -673,6 +674,7 @@ void maniscalco::msufsort::second_stage_its
         int32_t numSuffixes[numThreads] = {};
         int32_t sCount[numThreads][0x100] = {};
         suffix_index * dest[numThreads][0x100] = {};
+
         while (currentSuffix != endSuffixArray)
         {
             // calculate current 'safe' suffixes to process
@@ -722,13 +724,20 @@ void maniscalco::msufsort::second_stage_its
                 auto endForThisThread = begin + totalSuffixesPerThread;
                 if (endForThisThread > end)
                     endForThisThread = end;
-                if (threadId == (numThreads - 1))
+                if (threadId == numWorkerThreads_)
+                {
                     task(inputBegin_, begin, endForThisThread, cache[threadId].get(), std::ref(numSuffixes[threadId]), sCount[threadId]);
+                }
                 else
-                    threadPool_->post_task(threadId, std::bind(task, inputBegin_, begin, endForThisThread, cache[threadId].get(), std::ref(numSuffixes[threadId]), sCount[threadId]));
+                {
+                    workerThreads_[threadId].post_task(task, inputBegin_, begin, endForThisThread, cache[threadId].get(), 
+                            std::ref(numSuffixes[threadId]), sCount[threadId]);
+                }
                 begin = endForThisThread;
             }
-            threadPool_->wait_for_all_tasks_completed();
+
+            for (auto threadId = 0; threadId < numWorkerThreads_; ++threadId)
+                workerThreads_[threadId].wait();
 
             // not worth multi threading this bit ...
             for (auto threadId = 0; threadId < numThreads; ++threadId)
@@ -757,12 +766,18 @@ void maniscalco::msufsort::second_stage_its
                         ++begin;
                     }
                 };
-                if (threadId == (numThreads - 1))
+                if (threadId == numWorkerThreads_)
+                {
                     task(dest[threadId], cache[threadId].get(), cache[threadId].get() + numSuffixes[threadId]);
+                }
                 else
-                    threadPool_->post_task(threadId, std::bind(task, dest[threadId], cache[threadId].get(), cache[threadId].get() + numSuffixes[threadId]));
+                {
+                    workerThreads_[threadId].post_task(task, dest[threadId], cache[threadId].get(), cache[threadId].get() + numSuffixes[threadId]);
+                }
             }
-            threadPool_->wait_for_all_tasks_completed();
+
+            for (auto threadId = 0; threadId < numWorkerThreads_; ++threadId)
+                workerThreads_[threadId].wait();
         }
     }
     else
@@ -810,7 +825,6 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform
     // private:
     // creates the burrows wheeler transform while completing the second stage
     // of the improved two stage sort.
-    int32_t numThreads
 )
 {
     auto start = std::chrono::system_clock::now();
@@ -820,6 +834,7 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform
     suffix_index * nextB[0x100];
     suffix_index ** previousNextB = nextB;
     uint8_t previousPrecedingSymbol = 0;
+
     for (int32_t symbol = 0xff; symbol >= 0; --symbol, curbackBucketOffset_ -= 0x100)
     {
         int32_t symbolCount = (*curbackBucketOffset_ - ((symbol > 0) ? curbackBucketOffset_[-0x100] : 0));
@@ -853,8 +868,9 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform
 
     // A suffixes from left to right pass
     auto * sentinel = suffixArrayBegin_;
-    if (numThreads > 1)
+    if (numWorkerThreads_ > 0)
     {
+        auto numThreads = (int32_t)(numWorkerThreads_ + 1); // +1 for main thread
         // multi threaded left to right pass
         auto endSuffixArray = (suffixArrayBegin_ + std::distance(inputBegin_, inputEnd_) + 1);
         auto currentSuffix = suffixArrayBegin_;
@@ -874,6 +890,7 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform
         int32_t numSuffixes[numThreads] = {};
         int32_t sCount[numThreads][0x100] = {};
         suffix_index * dest[numThreads][0x100] = {};
+
         while (currentSuffix != endSuffixArray)
         {
             // calculate current 'safe' suffixes to process
@@ -929,13 +946,20 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform
                 auto endForThisThread = begin + totalSuffixesPerThread;
                 if (endForThisThread > end)
                     endForThisThread = end;
-                if (threadId == (numThreads - 1))
+                if (threadId == numWorkerThreads_)
+                {
                     task(inputBegin_, begin, endForThisThread, cache[threadId].get(), std::ref(numSuffixes[threadId]), sCount[threadId]);
+                }
                 else
-                    threadPool_->post_task(threadId, std::bind(task, inputBegin_, begin, endForThisThread, cache[threadId].get(), std::ref(numSuffixes[threadId]), sCount[threadId]));
+                {
+                    workerThreads_[threadId].post_task(task, inputBegin_, begin, endForThisThread, cache[threadId].get(), 
+                            std::ref(numSuffixes[threadId]), sCount[threadId]);
+                }
                 begin = endForThisThread;
             }
-            threadPool_->wait_for_all_tasks_completed();
+
+            for (auto threadId = 0; threadId < numWorkerThreads_; ++threadId)
+                workerThreads_[threadId].wait();
 
             // not worth multi threading this bit ...
             for (auto threadId = 0; threadId < numThreads; ++threadId)
@@ -964,17 +988,20 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform
                         ++begin;
                     }
                 };
-                if (threadId == (numThreads - 1))
+                if (threadId == numWorkerThreads_)
+                {
                     task(dest[threadId], cache[threadId].get(), cache[threadId].get() + numSuffixes[threadId]);
+                }
                 else
-                    threadPool_->post_task(threadId, std::bind(task, dest[threadId], cache[threadId].get(), cache[threadId].get() + numSuffixes[threadId]));
+                {
+                    workerThreads_[threadId].post_task(task, dest[threadId], cache[threadId].get(), cache[threadId].get() + numSuffixes[threadId]);
+                }
             }
-            threadPool_->wait_for_all_tasks_completed();
-        }
 
-        for (auto i = 0; i < inputSize_; ++i)
-            if (suffixArrayBegin_[i] & 0x80000000)
-                int y = 9;
+            for (auto threadId = 0; threadId < numWorkerThreads_; ++threadId)
+                workerThreads_[threadId].wait();
+
+        }
     }
     else
     {
@@ -1026,9 +1053,10 @@ void maniscalco::msufsort::first_stage_its
 (
     // private:
     // does the first stage of the improved two stage sort
-    int32_t numThreads
 )
 {
+    std::cout << "beginning first stage its" << std::endl;
+    auto numThreads = (int32_t)(numWorkerThreads_ + 1); // +1 for main thread
     auto start = std::chrono::system_clock::now();
     two_byte_symbol_count count;
     two_byte_symbol_count aCount;
@@ -1080,14 +1108,19 @@ void maniscalco::msufsort::first_stage_its
         auto inputEnd = inputCurrent + numSuffixesPerThread;
         if (inputEnd >= (inputEnd_ - 1))
             inputEnd = (inputEnd_ - 1);
-        if (threadId == (numThreads - 1))
+        if (threadId == numWorkerThreads_)
+        {
             threadFunction(inputEnd - 1, inputCurrent, std::ref(threadCount[threadId]), std::ref(threadACount[threadId]), std::ref(bStarCount[threadId]));
+        }
         else
-            threadPool_->post_task(threadId, std::bind(threadFunction, inputEnd - 1, inputCurrent, std::ref(threadCount[threadId]), 
-                    std::ref(threadACount[threadId]), std::ref(bStarCount[threadId])));
+        {
+            workerThreads_[threadId].post_task(threadFunction, inputEnd - 1, inputCurrent, std::ref(threadCount[threadId]), std::ref(threadACount[threadId]), std::ref(bStarCount[threadId]));
+        }
         inputCurrent = inputEnd;
     }
-    threadPool_->wait_for_all_tasks_completed();
+    for (auto threadId = 0; threadId < numWorkerThreads_; ++threadId)
+        workerThreads_[threadId].wait();
+
 
     // not worth multi threading this next bit
     ++aCount[((uint16_t)inputEnd_[-1]) << 8];
@@ -1169,13 +1202,15 @@ void maniscalco::msufsort::first_stage_its
         auto inputEnd = inputCurrent + numSuffixesPerThread;
         if (inputEnd >= (inputEnd_ - 1))
             inputEnd = (inputEnd_ - 1);
-        if (threadId == (numThreads - 1))
+        if (threadId == numWorkerThreads_)
             threadFunction(inputEnd - 1, inputCurrent, std::ref(bStarOffset[threadId]));
         else
-            threadPool_->post_task(threadId, std::bind(threadFunction, inputEnd - 1, inputCurrent, std::ref(bStarOffset[threadId])));
+            workerThreads_[threadId].post_task(threadFunction, inputEnd - 1, inputCurrent, std::ref(bStarOffset[threadId]));
         inputCurrent = inputEnd;
     }
-    threadPool_->wait_for_all_tasks_completed();
+    for (auto threadId = 0; threadId < numWorkerThreads_; ++threadId)
+        workerThreads_[threadId].wait();
+
 
     auto finish = std::chrono::system_clock::now();
     std::cout << "direct sort initial 16 bit sort time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
@@ -1198,12 +1233,14 @@ void maniscalco::msufsort::first_stage_its
                     multikey_quicksort(suffixArrayBegin_ + partition.first, suffixArrayBegin_ + partition.first + partition.second, 2, 0);
             }
         };
-        if (threadId == (numThreads - 1))
+        if (threadId == numWorkerThreads_)
             task();
         else
-            threadPool_->post_task(threadId, task);
+            workerThreads_[threadId].post_task(task);
     }
-    threadPool_->wait_for_all_tasks_completed();
+    for (auto threadId = 0; threadId < numWorkerThreads_; ++threadId)
+        workerThreads_[threadId].wait();
+
 
     // spread b* to their final locations in suffix array
     auto destination = suffixArrayBegin_ + total;
@@ -1237,21 +1274,12 @@ auto maniscalco::msufsort::make_suffix_array
     // public:
     // computes the suffix array for the input data
     uint8_t const * inputBegin,
-    uint8_t const * inputEnd,
-    int32_t numThreads
+    uint8_t const * inputEnd
 ) -> suffix_array
 {
     inputBegin_ = inputBegin;
     inputEnd_ = inputEnd;
     inputSize_ = std::distance(inputBegin_, inputEnd_);
-
-    if (numThreads < 1)
-        numThreads = 1;
-    if (numThreads > (int32_t)std::thread::hardware_concurrency())
-        numThreads = (int32_t)std::thread::hardware_concurrency();
-    if (numThreads > inputSize_)
-        numThreads = inputSize_;
-
     getValueEnd_ = (inputEnd_ - sizeof(uint64_t));
     getValueMaxIndex_ = (inputSize_ - sizeof(uint64_t));
     for (auto & e : copyEnd_)
@@ -1270,8 +1298,8 @@ auto maniscalco::msufsort::make_suffix_array
     inverseSuffixArrayBegin_ = (suffixArrayBegin_ + ((inputSize_ + 1) >> 1));
     inverseSuffixArrayEnd_ = suffixArrayEnd_;
 
-    first_stage_its(numThreads);
-    second_stage_its(numThreads);
+    first_stage_its();
+    second_stage_its();
     return suffixArray;
 }
 
@@ -1285,20 +1313,12 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
     // returns the index of the sentinel character (which is removed from the
     // transformed data).
     uint8_t * inputBegin,
-    uint8_t * inputEnd,
-    int32_t numThreads
+    uint8_t * inputEnd
 )
 {
     inputBegin_ = inputBegin;
     inputEnd_ = inputEnd;
     inputSize_ = std::distance(inputBegin_, inputEnd_);
-
-    if (numThreads < 1)
-        numThreads = 1;
-    if (numThreads > (int32_t)std::thread::hardware_concurrency())
-        numThreads = (int32_t)std::thread::hardware_concurrency();
-    if (numThreads > inputSize_)
-        numThreads = inputSize_;
 
     getValueEnd_ = (inputEnd_ - sizeof(uint64_t));
     getValueMaxIndex_ = (inputSize_ - sizeof(uint64_t));
@@ -1318,8 +1338,8 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
     inverseSuffixArrayBegin_ = (suffixArrayBegin_ + ((inputSize_ + 1) >> 1));
     inverseSuffixArrayEnd_ = suffixArrayEnd_;
 
-    first_stage_its(numThreads);
-    int32_t sentinelIndex = second_stage_its_as_burrows_wheeler_transform(numThreads);
+    first_stage_its();
+    int32_t sentinelIndex = second_stage_its_as_burrows_wheeler_transform();
     for (int32_t i = 0; i < (inputSize_ + 1); ++i)
     {
         if (i != sentinelIndex)
