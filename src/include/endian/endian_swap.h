@@ -49,7 +49,7 @@ namespace maniscalco
 
 
     template <typename FromEndianType, typename ToEndianType, typename InputType>
-    inline InputType endian_swap
+    InputType endian_swap
     (
         InputType
     );

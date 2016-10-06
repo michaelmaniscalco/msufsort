@@ -80,7 +80,7 @@ namespace maniscalco
 
 
     template <typename T>
-    static inline T byte_swap
+    T byte_swap
     (
         T
     );

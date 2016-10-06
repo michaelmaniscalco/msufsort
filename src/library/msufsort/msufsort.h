@@ -1,3 +1,30 @@
+/*
+The MIT License (MIT)
+
+Copyright (c) 2016 Michael A Maniscalco
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+
+
+
 #pragma once
 
 #include <vector>
@@ -57,6 +84,7 @@ namespace maniscalco
         // flags used in SA
         static int32_t constexpr preceding_suffix_is_type_a_flag = 0x80000000;
         static int32_t constexpr sa_index_mask = ~preceding_suffix_is_type_a_flag;
+        static int32_t constexpr suffix_is_unsorted_b_type = sa_index_mask;
         static int32_t constexpr min_length_before_tandem_repeat_check = (int32_t)(2 + sizeof(uint64_t) + sizeof(uint64_t));
 
         static constexpr int32_t insertion_sort_threshold = 16;
@@ -110,9 +138,44 @@ namespace maniscalco
             uint64_t
         );
 
+        void count_suffixes
+        (
+            uint8_t const *,
+            uint8_t const *,
+            int32_t (&)[0x10000],
+            int32_t (&)[0x10000],
+            int32_t (&)[0x10000]
+        );
+
+        template <typename F, typename ... argument_types>
+        void post_task_to_thread
+        (
+            int32_t threadId,
+            F &&,
+            argument_types && ...
+        );
+
+        void wait_for_all_tasks_completed() const;
+
         void second_stage_its();
 
         int32_t second_stage_its_as_burrows_wheeler_transform();
+
+        void second_stage_its_right_to_left_pass_single_threaded();
+
+        void second_stage_its_right_to_left_pass_multi_threaded();
+
+        void second_stage_its_left_to_right_pass_single_threaded();
+
+        void second_stage_its_left_to_right_pass_multi_threaded();
+
+        void second_stage_its_as_burrows_wheeler_transform_right_to_left_pass_single_threaded();
+
+        int32_t second_stage_its_as_burrows_wheeler_transform_left_to_right_pass_single_threaded();
+
+        void second_stage_its_as_burrows_wheeler_transform_right_to_left_pass_multi_threaded();
+
+        int32_t second_stage_its_as_burrows_wheeler_transform_left_to_right_pass_multi_threaded();
 
         void first_stage_its();
 
@@ -122,6 +185,13 @@ namespace maniscalco
             suffix_index *,
             int32_t,
             uint64_t
+        );
+
+        void initial_two_byte_radix_sort
+        (
+            uint8_t const *,
+            uint8_t const *,
+            int32_t (&)[0x10000]
         );
 
         uint8_t const * inputBegin_;
@@ -144,9 +214,13 @@ namespace maniscalco
 
         suffix_index *  inverseSuffixArrayEnd_;
 
-        int32_t         frontBucketOffset_[0x100];
+        suffix_index *  frontBucketOffset_[0x100];
 
-        int32_t         backBucketOffset_[0x10000];
+        suffix_index *  backBucketOffset_[0x10000];
+
+        int32_t         aCount_[0x100];
+
+        int32_t         bCount_[0x100];
 
         bool const      tandemRepeatSortEnabled_ = true;
 
@@ -267,6 +341,10 @@ maniscalco::msufsort::suffix_array maniscalco::make_suffix_array
     int32_t numThreads
 )
 {
+    if (numThreads <= 0)
+        numThreads = 1;
+    if (numThreads > (int32_t)std::thread::hardware_concurrency())
+        numThreads = (int32_t)std::thread::hardware_concurrency();
     return msufsort(numThreads).make_suffix_array((uint8_t const *)&*begin, (uint8_t const *)&*end);
 }
 
@@ -280,6 +358,10 @@ int32_t maniscalco::forward_burrows_wheeler_transform
     int32_t numThreads
 )
 {
+    if (numThreads <= 0)
+        numThreads = 1;
+    if (numThreads > (int32_t)std::thread::hardware_concurrency())
+        numThreads = (int32_t)std::thread::hardware_concurrency();
     return msufsort(numThreads).forward_burrows_wheeler_transform((uint8_t *)&*begin, (uint8_t *)&*end);
 }
 
