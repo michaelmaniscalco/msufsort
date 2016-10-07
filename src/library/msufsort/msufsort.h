@@ -216,7 +216,7 @@ namespace maniscalco
 
         suffix_index *  frontBucketOffset_[0x100];
 
-        suffix_index *  backBucketOffset_[0x10000];
+        std::unique_ptr<suffix_index * []>  backBucketOffset_;
 
         int32_t         aCount_[0x100];
 
