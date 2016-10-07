@@ -29,7 +29,6 @@ SOFTWARE.
 #include <atomic>
 #include <iostream>
 #include <thread>
-#include <pthread.h>
 #include <algorithm>
 #include <limits>
 
@@ -1477,8 +1476,8 @@ void maniscalco::msufsort::first_stage_its
     auto numSuffixesPerThread = ((inputSize_ + numThreads - 1) / numThreads);
 
     {
-        int32_t threadBCount[numThreads][0x10000]{};
-        int32_t threadACount[numThreads][0x10000]{};
+        std::unique_ptr<int32_t [][0x10000]> threadBCount(new int32_t[numThreads][0x10000]{});
+        std::unique_ptr<int32_t [][0x10000]> threadACount(new int32_t[numThreads][0x10000]{});
         auto inputCurrent = inputBegin_;
         for (auto threadId = 0; threadId < numThreads; ++threadId)
         {
@@ -1508,7 +1507,7 @@ void maniscalco::msufsort::first_stage_its
     int32_t bStarTotal = 0;
     std::unique_ptr<int32_t []> totalBStarCount(new int32_t[0x10000]{});
     std::unique_ptr<int32_t [][0x10000]> bStarOffset(new int32_t[numThreads][0x10000]{});
-    std::pair<int32_t, int32_t> partitions[0x10000];
+    std::unique_ptr<std::pair<int32_t, int32_t> []> partitions(new std::pair<int32_t, int32_t>[0x10000]{});
     auto numPartitions = 0;
     for (int32_t i = 0; i < 0x100; ++i)
     {
