@@ -406,7 +406,7 @@ void maniscalco::msufsort::multikey_quicksort
     }
 
     // TODO: stack size is fixed.  make it dynamic in the unlikely case of overflow.
-    auto partitionStackSize = 8192;
+    auto partitionStackSize = (1 << 16);
     partition_info partitionStack[partitionStackSize];
     auto partitionStackTop = partitionStack;
     auto partitionStackEnd = (partitionStack + partitionStackSize);
@@ -1007,22 +1007,30 @@ void maniscalco::msufsort::second_stage_its
         auto start = std::chrono::system_clock::now();
         second_stage_its_right_to_left_pass_single_threaded();
         auto finish = std::chrono::system_clock::now();
-        std::cout << "second stage right to left pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #ifdef VERBOSE
+            std::cout << "second stage right to left pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #endif
         start = std::chrono::system_clock::now();
         second_stage_its_left_to_right_pass_single_threaded();
         finish = std::chrono::system_clock::now();
-        std::cout << "second stage left to right pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #ifdef VERBOSE
+            std::cout << "second stage left to right pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #endif
     }
     else
     {
         auto start = std::chrono::system_clock::now();
         second_stage_its_right_to_left_pass_multi_threaded();
         auto finish = std::chrono::system_clock::now();
-        std::cout << "second stage right to left pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #ifdef VERBOSE
+            std::cout << "second stage right to left pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #endif
         start = std::chrono::system_clock::now();
         second_stage_its_left_to_right_pass_multi_threaded();
         finish = std::chrono::system_clock::now();
-        std::cout << "second stage left to right pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #ifdef VERBOSE
+            std::cout << "second stage left to right pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #endif
     }
 }
 
@@ -1147,7 +1155,7 @@ void maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform_right_t
                                     currentPrecedingSymbolCount = 0;
                                 }
                                 ++currentPrecedingSymbolCount;
-                                if (precedingSuffixIndex > 0)
+                                if (precedingSuffixIndex >= 0)
                                     *begin = precedingSymbol;
                             }
                         }
@@ -1243,10 +1251,9 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform_left
                 if (flag)
                     *((*previousFrontBucketOffset)++) = (precedingSuffixIndex | flag);
                 else
-                    if (precedingSuffixIndex > 0)
-                        *((*previousFrontBucketOffset)++) = precedingSuffix[-1];
+                    *((*previousFrontBucketOffset)++) = ((precedingSuffixIndex > 0) ? precedingSuffix[-1] : preceding_suffix_is_type_a_flag);
             }
-            if (precedingSuffixIndex > 0)
+            if (precedingSuffixIndex >= 0)
                 *currentSuffix = *precedingSuffix;
             else
                 sentinel = currentSuffix;
@@ -1343,7 +1350,7 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform_left
                                 }
                                 ++currentPrecedingSymbolCount;
                             }
-                            if (precedingSuffixIndex > 0)
+                            if (precedingSuffixIndex >= 0)
                                 *current = precedingSuffix[0];
                             else
                                 sentinel = current;
@@ -1422,11 +1429,15 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform
         auto start = std::chrono::system_clock::now();
         second_stage_its_as_burrows_wheeler_transform_right_to_left_pass_single_threaded();
         auto finish = std::chrono::system_clock::now();
-        std::cout << "second stage right to left pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #ifdef VERBOSE
+            std::cout << "second stage right to left pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #endif
         start = std::chrono::system_clock::now();
         auto sentinelIndex = second_stage_its_as_burrows_wheeler_transform_left_to_right_pass_single_threaded();
         finish = std::chrono::system_clock::now();
-        std::cout << "second stage left to right pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #ifdef VERBOSE
+            std::cout << "second stage left to right pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #endif
         return sentinelIndex;
     }
     else
@@ -1434,11 +1445,15 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform
         auto start = std::chrono::system_clock::now();
         second_stage_its_as_burrows_wheeler_transform_right_to_left_pass_multi_threaded();
         auto finish = std::chrono::system_clock::now();
-        std::cout << "second stage right to left pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #ifdef VERBOSE
+            std::cout << "second stage right to left pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #endif
         start = std::chrono::system_clock::now();
         auto sentinelIndex = second_stage_its_as_burrows_wheeler_transform_left_to_right_pass_multi_threaded();
         finish = std::chrono::system_clock::now();
-        std::cout << "second stage left to right pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #ifdef VERBOSE
+            std::cout << "second stage left to right pass time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+        #endif
         return sentinelIndex;
     }
 }
@@ -1575,11 +1590,11 @@ void maniscalco::msufsort::first_stage_its
             }
             total += (bCount[s] + aCount[s]);
             backBucketOffset_[(j << 8) | i] = suffixArrayBegin_ + total;
-            if (totalBStarCount[s] > 1)
+            if (totalBStarCount[s] > 0)
                 partitions[numPartitions++] = std::make_pair(partitionStartIndex, totalBStarCount[s]);
         }
     }
-
+std::cout << "Direct sort of " << bStarTotal << " b* suffixes" << std::endl;
     // multi threaded two byte radix sort forms initial partitions which
     // will be fully sorted by multikey quicksort
     auto inputCurrent = inputBegin_;
@@ -1594,7 +1609,9 @@ void maniscalco::msufsort::first_stage_its
     wait_for_all_tasks_completed();
 
     auto finish = std::chrono::system_clock::now();
-    std::cout << "direct sort initial 16 bit sort time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+    #ifdef VERBOSE
+        std::cout << "direct sort initial 16 bit sort time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+    #endif
     start = std::chrono::system_clock::now();
     
     // multikey quicksort on B* parititions
@@ -1608,7 +1625,7 @@ void maniscalco::msufsort::first_stage_its
             {
                 while (true)
                 {
-                    int32_t partitionIndex = partitionCount--;
+                    int32_t partitionIndex = --partitionCount;
                     if (partitionIndex < 0)
                         break;
                     auto const & partition = partitions[partitionIndex];
@@ -1640,7 +1657,9 @@ void maniscalco::msufsort::first_stage_its
     suffixArrayBegin_[0] = (inputSize_ | preceding_suffix_is_type_a_flag); // sa[0] = sentinel
 
     finish = std::chrono::system_clock::now();
-    std::cout << "direct sort time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+    #ifdef VERBOSE
+        std::cout << "direct sort time: " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms " << std::endl;
+    #endif
 }
 
 
@@ -1661,9 +1680,14 @@ auto maniscalco::msufsort::make_suffix_array
     for (auto & e : copyEnd_)
         e = 0x00;
     auto source = inputEnd_ - sizeof(uint64_t);
+    auto dest = copyEnd_;
     if (source < inputBegin_)
-        source = inputBegin_;
-    std::copy(source, inputEnd_, copyEnd_);
+    {
+        auto n = std::distance(source, inputBegin);
+        source += n;
+        dest += n;
+    }
+    std::copy(source, inputEnd_, dest);
     suffix_array suffixArray;
     auto suffixArraySize = (inputSize_ + 1);
     suffixArray.resize(suffixArraySize);
@@ -1701,9 +1725,14 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
     for (auto & e : copyEnd_)
         e = 0x00;
     auto source = inputEnd_ - sizeof(uint64_t);
+    auto dest = copyEnd_;
     if (source < inputBegin_)
-        source = inputBegin_;
-    std::copy(source, inputEnd_, copyEnd_);
+    {
+        auto n = std::distance((uint8_t const *)source, (uint8_t const *)inputBegin);
+        source += n;
+        dest += n;
+    }
+    std::copy(source, inputEnd_, dest);
     suffix_array suffixArray;
     auto suffixArraySize = (inputSize_ + 1);
     suffixArray.resize(suffixArraySize);
