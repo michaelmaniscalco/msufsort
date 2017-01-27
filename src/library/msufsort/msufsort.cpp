@@ -209,13 +209,13 @@ inline void maniscalco::msufsort::insertion_sort
 
         if (tandemRepeatSortEnabled_)
         {
-            // check for tandem repeats within partition
+
             bool potentialTandemRepeats = false;
-            if (matchLength >= min_length_before_tandem_repeat_check)
-            {
-                for (int32_t i = 0; ((!potentialTandemRepeats) && (i < (int32_t)sizeof(uint64_t))); ++i)
-	                potentialTandemRepeats = (get_value(inputBegin_, partitionBegin[0] - i - 1 + matchLength) == startingPattern);
-            }
+            int64_t suffixIndex = ((*partitionBegin) & sa_index_mask);
+            int64_t curIndex = (suffixIndex + currentMatchLength);
+            int64_t endIndex = (curIndex - ((currentMatchLength > 2) ? sizeof(uint64_t) : 2));
+            while ((!potentialTandemRepeats) && (--curIndex >= endIndex))
+                potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPattern);
             if (potentialTandemRepeats)
             {
                 // potential for tandem repeats found within this partition
@@ -275,7 +275,6 @@ bool maniscalco::msufsort::tandem_repeat_sort
     int32_t previousSuffixIndex = std::numeric_limits<int32_t>::max();
     suffix_index * terminatorsBegin = partitionEnd;
 
-    suffix_index currentTerminatorIndex = 0;
     for (auto cur = partitionEnd - 1; cur >= partitionBegin; --cur)
     {
 	    auto currentSuffixIndex = (*cur & sa_index_mask);
@@ -285,13 +284,12 @@ bool maniscalco::msufsort::tandem_repeat_sort
 		    // suffix is a tandem repeat
 		    tandemRepeatLength = distanceBetweenSuffixes;
             auto flags = (inverseSuffixArrayBegin_[currentSuffixIndex >> 1] & isa_flag_mask);
-            inverseSuffixArrayBegin_[currentSuffixIndex >> 1] = (tandemRepeatLength/*currentTerminatorIndex*/ | flags | is_tandem_repeat_flag);
+            inverseSuffixArrayBegin_[currentSuffixIndex >> 1] = (tandemRepeatLength | flags | is_tandem_repeat_flag);
 	    }
 	    else
 	    {
 		    // Suffix is a terminator
 		    *(--terminatorsBegin) = *cur;
-            currentTerminatorIndex = currentSuffixIndex;
 	    }
 	    previousSuffixIndex = currentSuffixIndex;
     }
@@ -332,55 +330,51 @@ bool maniscalco::msufsort::tandem_repeat_sort
 	    partitionBegin[i] = terminatorsBegin[i];
 
     // type A repeats
-    bool done = false;
-    int32_t distanceToRepeat = 0;
-    auto nextRepeatSuffix = partitionBegin + numTypeA - 1;
-    while (!done)
-    {
-        distanceToRepeat += tandemRepeatLength;
-        done = true;
-        for (int32_t i = 0; i < numTypeA; i++)
+    auto current = partitionBegin;
+    auto currentEnd = current + numTypeA;
+    auto next = currentEnd;
+    while (current != currentEnd)
+    { 
+        while (current != currentEnd)
         {
-	        auto terminatorIndex = partitionBegin[i] & sa_index_mask;
-            if (terminatorIndex >= distanceToRepeat)
+            auto index = (*current++ & sa_index_mask);
+            if (index >= tandemRepeatLength)
             {
-                auto potentialTandemRepeatIndex = (terminatorIndex - distanceToRepeat);
+                auto potentialTandemRepeatIndex = index - tandemRepeatLength;
                 auto isaValue = inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1];
-                if ((isaValue & is_tandem_repeat_flag) && ((isaValue & isa_index_mask) == tandemRepeatLength/*terminatorIndex*/))
-                {
-                    done = false;
+                if ((isaValue & is_tandem_repeat_flag) && ((isaValue & isa_index_mask) == tandemRepeatLength))
+                {     
                     auto flag = ((potentialTandemRepeatIndex > 0) && (inputBegin_[potentialTandemRepeatIndex - 1] <= inputBegin_[potentialTandemRepeatIndex])) ? 0 : preceding_suffix_is_type_a_flag;
-                    *(++nextRepeatSuffix) = (potentialTandemRepeatIndex | flag);
+                    *(next++) = (potentialTandemRepeatIndex | flag);
                     inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1] &= ~is_tandem_repeat_flag;
-                }
+                }           
             }
         }
+        currentEnd = next;
     }
 
     // type B repeats
-    done = false;
-    distanceToRepeat = 0;
-    nextRepeatSuffix = partitionEnd - numTypeB;
-    while (!done)
-    {
-        distanceToRepeat += tandemRepeatLength;
-        done = true;
-        for (int32_t i = 1; i <= numTypeB; i++)
+    current = partitionEnd - 1;
+    currentEnd = current - numTypeB;
+    next = currentEnd;
+    while (current != currentEnd)
+    { 
+        while (current != currentEnd)
         {
-	        int32_t terminatorIndex = partitionEnd[-i] & sa_index_mask;
-            if (terminatorIndex >= distanceToRepeat)
+            auto index = (*current-- & sa_index_mask);
+            if (index >= tandemRepeatLength)
             {
-                auto potentialTandemRepeatIndex = (terminatorIndex - distanceToRepeat);
+                auto potentialTandemRepeatIndex = index - tandemRepeatLength;
                 auto isaValue = inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1];
-                if ((isaValue & is_tandem_repeat_flag) && ((isaValue & isa_index_mask) == tandemRepeatLength/*terminatorIndex*/))
-                {
-                    done = false;
+                if ((isaValue & is_tandem_repeat_flag) && ((isaValue & isa_index_mask) == tandemRepeatLength))
+                {     
                     auto flag = ((potentialTandemRepeatIndex > 0) && (inputBegin_[potentialTandemRepeatIndex - 1] <= inputBegin_[potentialTandemRepeatIndex])) ? 0 : preceding_suffix_is_type_a_flag;
-                    *(--nextRepeatSuffix) = (potentialTandemRepeatIndex | flag);
+                    *(next--) = (potentialTandemRepeatIndex | flag);
                     inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1] &= ~is_tandem_repeat_flag;
-                }
+                }           
             }
         }
+        currentEnd = next;
     }
     return true;
 }
@@ -406,7 +400,7 @@ void maniscalco::msufsort::multikey_quicksort
     }
 
     // TODO: stack size is fixed.  make it dynamic in the unlikely case of overflow.
-    auto partitionStackSize = (1 << 16);
+    auto partitionStackSize = (1 << 15);
     partition_info partitionStack[partitionStackSize];
     auto partitionStackTop = partitionStack;
     auto partitionStackEnd = (partitionStack + partitionStackSize);
@@ -560,7 +554,6 @@ void maniscalco::msufsort::multikey_quicksort
                 }
 
                 int32_t szNextMatchLength = (currentMatchLength + sizeof(uint64_t));
-
                 if (partitionBack != ptrF)
 	                *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrF, partitionBack), currentMatchLength, startingPattern, false};
 
@@ -568,12 +561,12 @@ void maniscalco::msufsort::multikey_quicksort
                 {
                     if (currentMatchLength == 2)
                         startingPattern = get_value(inputBegin_, *ptrE);
-		            if (szNextMatchLength >= min_length_before_tandem_repeat_check)
-		            {
-                        potentialTandemRepeats = false;
-			            for (int32_t i = 0; ((!potentialTandemRepeats) && (i < (int32_t)sizeof(uint64_t))); ++i)
-				            potentialTandemRepeats = (get_value(inputBegin_, (*ptrE) - i - 1 + currentMatchLength) == startingPattern);
-		            }
+                    potentialTandemRepeats = false;
+                    int64_t suffixIndex = ((*ptrE) & sa_index_mask);
+                    int64_t curIndex = (suffixIndex + currentMatchLength);
+                    int64_t endIndex = (curIndex - ((currentMatchLength > 2) ? sizeof(uint64_t) : 2));
+                    while ((!potentialTandemRepeats) && (--curIndex >= endIndex))
+                        potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPattern);
 	                *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrE, ptrF), szNextMatchLength, startingPattern, potentialTandemRepeats};
                 }
 
@@ -584,12 +577,12 @@ void maniscalco::msufsort::multikey_quicksort
                 {
                     if (currentMatchLength == 2)
                         startingPattern = get_value(inputBegin_, *ptrC);
-		            if (szNextMatchLength >= min_length_before_tandem_repeat_check)
-		            {
-                        potentialTandemRepeats = false;
-			            for (int32_t i = 0; ((!potentialTandemRepeats) && (i < (int32_t)sizeof(uint64_t))); ++i)
-				            potentialTandemRepeats = (get_value(inputBegin_, (*ptrC) - i - 1 + currentMatchLength) == startingPattern);
-		            }
+                    potentialTandemRepeats = false;
+                    int64_t suffixIndex = ((*ptrC) & sa_index_mask);
+                    int64_t curIndex = (suffixIndex + currentMatchLength);
+                    int64_t endIndex = (curIndex - ((currentMatchLength > 2) ? sizeof(uint64_t) : 2));
+                    while ((!potentialTandemRepeats) && (--curIndex >= endIndex))
+                        potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPattern);
 	                *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrC, ptrD) + 1, szNextMatchLength, startingPattern, potentialTandemRepeats};
                 }
 
@@ -600,12 +593,12 @@ void maniscalco::msufsort::multikey_quicksort
                 {
                     if (currentMatchLength == 2)
                         startingPattern = get_value(inputBegin_, *ptrA);
-		            if (szNextMatchLength >= min_length_before_tandem_repeat_check)
-		            {
-                        potentialTandemRepeats = false;
-			            for (int32_t i = 0; ((!potentialTandemRepeats) && (i < (int32_t)sizeof(uint64_t))); ++i)
-				            potentialTandemRepeats = (get_value(inputBegin_, (*ptrA) - i - 1 + currentMatchLength) == startingPattern);
-		            }
+                    potentialTandemRepeats = false;
+                    int64_t suffixIndex = ((*ptrA) & sa_index_mask);
+                    int64_t curIndex = (suffixIndex + currentMatchLength);
+                    int64_t endIndex = (curIndex - ((currentMatchLength > 2) ? sizeof(uint64_t) : 2));
+                    while ((!potentialTandemRepeats) && (--curIndex >= endIndex))
+                        potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPattern);
 	                *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrA, ptrB), szNextMatchLength, startingPattern, potentialTandemRepeats};
                 }
 
