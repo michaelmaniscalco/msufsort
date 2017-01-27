@@ -285,7 +285,7 @@ bool maniscalco::msufsort::tandem_repeat_sort
 		    // suffix is a tandem repeat
 		    tandemRepeatLength = distanceBetweenSuffixes;
             auto flags = (inverseSuffixArrayBegin_[currentSuffixIndex >> 1] & isa_flag_mask);
-            inverseSuffixArrayBegin_[currentSuffixIndex >> 1] = (currentTerminatorIndex | flags | is_tandem_repeat_flag);
+            inverseSuffixArrayBegin_[currentSuffixIndex >> 1] = (tandemRepeatLength/*currentTerminatorIndex*/ | flags | is_tandem_repeat_flag);
 	    }
 	    else
 	    {
@@ -346,7 +346,7 @@ bool maniscalco::msufsort::tandem_repeat_sort
             {
                 auto potentialTandemRepeatIndex = (terminatorIndex - distanceToRepeat);
                 auto isaValue = inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1];
-                if ((isaValue & is_tandem_repeat_flag) && ((isaValue & isa_index_mask) == terminatorIndex))
+                if ((isaValue & is_tandem_repeat_flag) && ((isaValue & isa_index_mask) == tandemRepeatLength/*terminatorIndex*/))
                 {
                     done = false;
                     auto flag = ((potentialTandemRepeatIndex > 0) && (inputBegin_[potentialTandemRepeatIndex - 1] <= inputBegin_[potentialTandemRepeatIndex])) ? 0 : preceding_suffix_is_type_a_flag;
@@ -372,7 +372,7 @@ bool maniscalco::msufsort::tandem_repeat_sort
             {
                 auto potentialTandemRepeatIndex = (terminatorIndex - distanceToRepeat);
                 auto isaValue = inverseSuffixArrayBegin_[potentialTandemRepeatIndex >> 1];
-                if ((isaValue & is_tandem_repeat_flag) && ((isaValue & isa_index_mask) == terminatorIndex))
+                if ((isaValue & is_tandem_repeat_flag) && ((isaValue & isa_index_mask) == tandemRepeatLength/*terminatorIndex*/))
                 {
                     done = false;
                     auto flag = ((potentialTandemRepeatIndex > 0) && (inputBegin_[potentialTandemRepeatIndex - 1] <= inputBegin_[potentialTandemRepeatIndex])) ? 0 : preceding_suffix_is_type_a_flag;
