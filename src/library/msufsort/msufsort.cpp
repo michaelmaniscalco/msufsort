@@ -1785,7 +1785,7 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
         outputBuffer.resize(index.size());
         auto outputBegin = outputBuffer.data();
 
-        std::size_t maxPartitionsPerThread = 32;
+        std::size_t maxPartitionsPerThread = 256;
         std::vector<ibwt_partition_info> ibwtPartitionInfo;
         std::size_t partitionCount = (numThreads * maxPartitionsPerThread);
         if (partitionCount > index.size())
