@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-
+#define USE_EXPERIMENTAL_INVERSE_BWT
 
 
 #include "./msufsort.h"
@@ -1587,7 +1587,7 @@ void maniscalco::msufsort::first_stage_its
                 partitions[numPartitions++] = std::make_pair(partitionStartIndex, totalBStarCount[s]);
         }
     }
-std::cout << "Direct sort of " << bStarTotal << " b* suffixes" << std::endl;
+
     // multi threaded two byte radix sort forms initial partitions which
     // will be fully sorted by multikey quicksort
     auto inputCurrent = inputBegin_;
@@ -1747,52 +1747,247 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
 }
 
 
-//==============================================================================
-void maniscalco::msufsort::reverse_burrows_wheeler_transform
-(
-    // public:
-    // reverse the input (which is a BWT with sentinel symbol removed at index provided).
-    // overwrites the input data with the reverse transformed data.
-    uint8_t * inputBegin,
-    uint8_t * inputEnd,
-    int32_t sentinelIndex
-)
-{
-    auto inputSize = std::distance(inputBegin, inputEnd);
-    std::vector<suffix_index> index;
-    index.resize(inputSize + 1);
-	int32_t symbolRange[0x102];
-	for (auto & e : symbolRange)
-		e = 0;
+#ifdef USE_EXPERIMENTAL_INVERSE_BWT
+    //==============================================================================
+    void maniscalco::msufsort::reverse_burrows_wheeler_transform
+    (
+        uint8_t * inputBegin,
+        uint8_t * inputEnd,
+        int32_t sentinelIndex,
+        int32_t numThreads
+    )
+    {
+        auto inputSize = std::distance(inputBegin, inputEnd);
+        std::vector<suffix_index> index;
+        index.resize(inputSize + 1);
+	    int32_t symbolRange[0x101];
+	    for (auto & e : symbolRange)
+		    e = 0;
+	    symbolRange[0] = 1;
+	    for (auto inputCurent = inputBegin; inputCurent < inputEnd; ++inputCurent)
+		    symbolRange[((uint32_t)*inputCurent) + 1]++;
+	    int32_t n = 0;
+	    for (auto & e : symbolRange)
+	    {
+		    auto temp = e;
+		    e = n;
+		    n += temp;
+	    }
+	    n = 0;
+	    index[0] = sentinelIndex;
+	    for (int32_t i = 0; i < inputSize; i++, n++)
+	    {
+		    n += (i == sentinelIndex);
+		    index[symbolRange[(uint32_t)inputBegin[i] + 1]++] = n;
+	    }
 
-	symbolRange[0] = 1;
-	for (auto inputCurent = inputBegin; inputCurent < inputEnd; ++inputCurent)
-		symbolRange[((uint32_t)*inputCurent) + 1]++;
+	    std::vector<uint8_t> outputBuffer;
+        outputBuffer.resize(index.size());
+        auto outputBegin = outputBuffer.data();
 
-	int32_t n = 0;
-	for (auto & e : symbolRange)
-	{
-		auto temp = e;
-		e = n;
-		n += temp;
-	}
+        std::size_t const maxPartitionsPerThread = 32;
+        std::vector<ibwt_partition_info> ibwtPartitionInfo;
+        std::size_t partitionCount = (numThreads * maxPartitionsPerThread);
+        if (partitionCount > index.size())
+            partitionCount = index.size();
+        ibwtPartitionInfo.reserve(partitionCount + 8192);
+        std::size_t maxBytesPerPartition = (((index.size() << 1) - 1) / partitionCount);
 
-	n = 0;
-	index[0] = sentinelIndex;
-	for (int32_t i = 0; i < inputSize; i++, n++)
-	{
-		n += (i == sentinelIndex);
-		index[symbolRange[(uint32_t)inputBegin[i] + 1]++] = n;
-	}
-	n = sentinelIndex;
-	std::vector<uint8_t> reversedBuffer;
-    reversedBuffer.resize(inputSize);
-	for (auto & e : reversedBuffer)
-	{
-		n = index[n];
-		e = inputBegin[n - (n >= sentinelIndex)];
-	}
-    for (auto e : reversedBuffer)
-        *(inputBegin++) = e;
-}
+        auto firstDecodeIndex = index[0];
+        auto outputCurrent = outputBegin;
+        auto currentIndex = 0;
+        while (currentIndex < (std::int32_t)index.size())
+        {
+            auto partitionSize = maxBytesPerPartition;
+            if ((currentIndex + partitionSize) > index.size())
+                partitionSize = (index.size() - currentIndex);
+            ibwtPartitionInfo.push_back({index[currentIndex], index[currentIndex], outputCurrent, outputCurrent, outputCurrent + partitionSize});
+            index[currentIndex] |= 0x80000000;
+            currentIndex += partitionSize;
+            outputCurrent += partitionSize;
+        }
+        partitionCount = ibwtPartitionInfo.size();
+
+        std::vector<std::thread> threads;
+        threads.resize(numThreads);
+        struct decoded_info
+        {
+            std::uint8_t const * begin_;
+            std::uint8_t const * end_;
+            suffix_index startIndex_;
+            suffix_index endIndex_;
+        };
+
+        std::vector<decoded_info> decodedInfo;
+        decodedInfo.reserve(8192);
+
+        std::vector<std::pair<std::uint8_t *, std::uint8_t *>> availableDecodeSpace;
+        availableDecodeSpace.reserve(8192);
+        while (!ibwtPartitionInfo.empty())
+        {
+            auto partitionsRemaining = ibwtPartitionInfo.size();
+            for (auto threadId = 0; threadId < numThreads; ++threadId)
+            {
+                auto numPartitions = maxPartitionsPerThread;
+                if (numPartitions > partitionsRemaining)
+                    numPartitions = partitionsRemaining;
+                partitionsRemaining -= numPartitions;
+                threads[threadId] = std::move(std::thread(
+                        [](
+                            uint8_t * inputBegin,
+                            suffix_index * indexBegin,
+                            suffix_index sentinelIndex,
+                            ibwt_partition_info * partitionBegin, 
+                            ibwt_partition_info * partitionEnd
+                        )
+                        {
+                            bool done = false;
+                            while (!done)
+                            {
+                                done = true;
+                                for (auto partitionCurrent = partitionBegin; partitionCurrent < partitionEnd; ++partitionCurrent)
+                                {
+                                    auto & e = *partitionCurrent;
+                                    if (((e.currentIndex_ & (suffix_index)0x80000000) == 0) && (e.currentOutput_ < e.endOutput_))
+                                    {
+                                        done = false;
+                                        auto i = e.currentIndex_;
+                                        *e.currentOutput_++ = inputBegin[i - (i >= sentinelIndex)];
+                                        e.currentIndex_ = indexBegin[i];
+                                    }
+                                }
+                            }
+                        },
+                        inputBegin, index.data(), sentinelIndex, ibwtPartitionInfo.data() + partitionsRemaining, 
+                        ibwtPartitionInfo.data() + partitionsRemaining + numPartitions));
+            }
+            for (auto & e : threads)
+                e.join();
+
+            for (auto iter = ibwtPartitionInfo.begin(); iter != ibwtPartitionInfo.end(); )
+            {
+                if (iter->currentOutput_ != nullptr)
+                {
+                    auto startIndex = iter->startIndex_;
+                    auto endIndex = (iter->currentIndex_ & 0x7fffffff);
+                    if (iter->beginOutput_ != iter->currentOutput_)
+                    {
+                        decodedInfo.push_back({iter->beginOutput_, iter->currentOutput_, startIndex, endIndex});
+                        iter->startIndex_ = endIndex;
+                    }
+                }
+                if (iter->currentIndex_ & 0x80000000)
+                {
+                    if (iter->currentOutput_ < iter->endOutput_)
+                        availableDecodeSpace.push_back(std::make_pair(iter->currentOutput_, iter->endOutput_));
+                    iter = ibwtPartitionInfo.erase(iter);
+                }
+                else
+                {
+                    ++iter;
+                }
+            }
+
+            if (!ibwtPartitionInfo.empty())
+            {
+                for (auto & e : ibwtPartitionInfo)
+                {
+                    if (!availableDecodeSpace.empty())
+                    {
+                        auto a = availableDecodeSpace.back();
+                        availableDecodeSpace.pop_back();
+                        e.beginOutput_ = a.first;
+                        e.currentOutput_ = a.first;
+                        e.endOutput_ = a.second;
+                    }
+                    else
+                    {
+                        e.currentOutput_ = nullptr;
+                        e.endOutput_ = nullptr;
+                    }
+                }
+            }
+        }
+
+        auto currentDecodedIndex = 0;
+        std::uint8_t const * curDec = nullptr;
+        std::uint8_t const * curDecEnd = nullptr;
+        suffix_index curEndIndex = 0;
+        for (std::size_t i = 0; i < decodedInfo.size(); ++i)
+            if (decodedInfo[i].startIndex_ == firstDecodeIndex)
+            {
+                curDec = decodedInfo[currentDecodedIndex].begin_ + 1;
+                curDecEnd = decodedInfo[currentDecodedIndex].end_;
+                curEndIndex = decodedInfo[currentDecodedIndex].endIndex_;
+            }
+
+        auto inputCurrent = inputBegin;
+        while (inputCurrent < inputEnd)
+        {
+            while ((inputCurrent < inputEnd) && (curDec < curDecEnd))
+                *inputCurrent++ = *curDec++;
+            for (std::size_t j = 0; j < decodedInfo.size(); ++j)
+                if (decodedInfo[j].startIndex_ == curEndIndex)
+                {
+                    curDec = decodedInfo[j].begin_;
+                    curDecEnd = decodedInfo[j].end_;
+                    curEndIndex = decodedInfo[j].endIndex_;
+                    break;
+                }
+        }
+    }
+
+
+#else // !USE_EXPERIMENTAL_INVERSE_BWT
+
+
+    //==============================================================================
+    void maniscalco::msufsort::reverse_burrows_wheeler_transform
+    (
+        // public:
+        // reverse the input (which is a BWT with sentinel symbol removed at index provided).
+        // overwrites the input data with the reverse transformed data.
+        uint8_t * inputBegin,
+        uint8_t * inputEnd,
+        int32_t sentinelIndex
+    )
+    {
+        auto inputSize = std::distance(inputBegin, inputEnd);
+        std::vector<suffix_index> index;
+        index.resize(inputSize + 1);
+	    int32_t symbolRange[0x102];
+	    for (auto & e : symbolRange)
+		    e = 0;
+
+	    symbolRange[0] = 1;
+	    for (auto inputCurent = inputBegin; inputCurent < inputEnd; ++inputCurent)
+		    symbolRange[((uint32_t)*inputCurent) + 1]++;
+
+	    int32_t n = 0;
+	    for (auto & e : symbolRange)
+	    {
+		    auto temp = e;
+		    e = n;
+		    n += temp;
+	    }
+
+	    n = 0;
+	    index[0] = sentinelIndex;
+	    for (int32_t i = 0; i < inputSize; i++, n++)
+	    {
+		    n += (i == sentinelIndex);
+		    index[symbolRange[(uint32_t)inputBegin[i] + 1]++] = n;
+	    }
+	    n = sentinelIndex;
+	    std::vector<uint8_t> reversedBuffer;
+        reversedBuffer.resize(inputSize);
+	    for (auto & e : reversedBuffer)
+	    {
+		    n = index[n];
+		    e = inputBegin[n - (n >= sentinelIndex)];
+	    }
+        for (auto e : reversedBuffer)
+            *(inputBegin++) = e;
+    }
+#endif // !USE_EXPERIMENTAL_INVERSE_BWT
 

@@ -32,6 +32,7 @@ std::vector<int8_t> load_file
         std::cout << "failed to load file: " << inputPath << std::endl;
         throw std::exception();
     }
+
     return input;
 }
 
@@ -224,14 +225,11 @@ int32_t main
             case test_mode:
             {
                 auto errorCount = 0;
-
-
-
                 for (auto numUniqueSymbols = 1; ((!errorCount) && (numUniqueSymbols < 0x100)); ++numUniqueSymbols)
                 {
                     for (auto inputSize = 1; ((!errorCount) && (inputSize < (1 << 10))); ++inputSize)
                     {
-                        for (int32_t numWorkerThreads = 1; numWorkerThreads < (int32_t)std::thread::hardware_concurrency(); ++numWorkerThreads)
+                        for (int32_t numWorkerThreads = 1; ((!errorCount) && (numWorkerThreads < (int32_t)std::thread::hardware_concurrency())); ++numWorkerThreads)
                         {
                             srand(numUniqueSymbols * inputSize * numWorkerThreads);
                             std::cout << "bwt test: num unique symbols = " << numUniqueSymbols << ", input size = " << inputSize << ", num threads = " << numWorkerThreads << std::endl;
@@ -240,7 +238,7 @@ int32_t main
                             auto copyOfInput = input;
                             auto sentinelIndex = ::maniscalco::forward_burrows_wheeler_transform(input.begin(), input.end(), numWorkerThreads);
                             // validate
-                            ::maniscalco::reverse_burrows_wheeler_transform(input.begin(), input.end(), sentinelIndex);
+                            ::maniscalco::reverse_burrows_wheeler_transform(input.begin(), input.end(), sentinelIndex, numWorkerThreads);
                             if (input != copyOfInput)
                             {
                                 std::cout << "**** BWT ERROR DETECTED" << std::endl;
@@ -299,7 +297,12 @@ int32_t main
                 std::cout << "burrows wheeler transform completed - total elapsed time: " << elapsed.count() << " ms" << std::endl;
 
                 // validate
-                ::maniscalco::reverse_burrows_wheeler_transform(input.begin(), input.end(), sentinelIndex);
+                start = std::chrono::system_clock::now();
+                ::maniscalco::reverse_burrows_wheeler_transform(input.begin(), input.end(), sentinelIndex, numWorkerThreads);
+                finish = std::chrono::system_clock::now();
+                elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start);
+                std::cout << "inverse burrows wheeler transform completed - total elapsed time: " << elapsed.count() << " ms" << std::endl;
+
                 if (input != copyOfInput)
                     std::cout << "**** BWT ERROR DETECTED" << std::endl;
                 else

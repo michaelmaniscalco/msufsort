@@ -64,10 +64,11 @@ namespace maniscalco
             uint8_t *
         );
 
-        void reverse_burrows_wheeler_transform
+        static void reverse_burrows_wheeler_transform
         (
 	        uint8_t *,
             uint8_t *,
+            int32_t,
             int32_t
         );
  
@@ -193,6 +194,15 @@ namespace maniscalco
             uint8_t const *,
             int32_t (&)[0x10000]
         );
+
+        struct ibwt_partition_info
+        {
+            suffix_index startIndex_;
+            suffix_index currentIndex_;
+            std::uint8_t * beginOutput_;
+            std::uint8_t * currentOutput_;
+            std::uint8_t * endOutput_;
+        };
 
         uint8_t const * inputBegin_;
 
@@ -322,11 +332,12 @@ namespace maniscalco
     );
 
     template <typename input_iter>
-    void reverse_burrows_wheeler_transform
+    static void reverse_burrows_wheeler_transform
     (
         input_iter,
         input_iter,
-        int32_t
+        int32_t,
+        int32_t = 1
     );
 
 } // namespace maniscalco
@@ -372,8 +383,9 @@ void maniscalco::reverse_burrows_wheeler_transform
 (
     input_iter begin,
     input_iter end,
-    int32_t sentinelIndex
+    int32_t sentinelIndex,
+    int32_t numThreads
 )
 {
-    msufsort().reverse_burrows_wheeler_transform((uint8_t *)&*begin, (uint8_t *)&*end, sentinelIndex);
+    msufsort::reverse_burrows_wheeler_transform((uint8_t *)&*begin, (uint8_t *)&*end, sentinelIndex, numThreads);
 }
