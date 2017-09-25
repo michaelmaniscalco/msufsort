@@ -21,7 +21,7 @@ std::vector<int8_t> load_file
     {
         inputStream.seekg(0, std::ios_base::end);
         int64_t size = inputStream.tellg();
-        input.reserve(size + sizeof(int32_t));
+        input.reserve(size);
         input.resize(size);
         inputStream.seekg(0, std::ios_base::beg);
         inputStream.read((char *)input.data(), input.size());
@@ -32,7 +32,6 @@ std::vector<int8_t> load_file
         std::cout << "failed to load file: " << inputPath << std::endl;
         throw std::exception();
     }
-
     return input;
 }
 
@@ -129,6 +128,7 @@ std::vector<int8_t> make_input
 )
 {
     std::vector<int8_t> input;
+    input.reserve(size);
     input.resize(size);
     for (auto & e : input)
         e = rand() % numUniqueSymbols;
@@ -227,7 +227,7 @@ int32_t main
                 auto errorCount = 0;
                 for (auto numUniqueSymbols = 1; ((!errorCount) && (numUniqueSymbols < 0x100)); ++numUniqueSymbols)
                 {
-                    for (auto inputSize = 1; ((!errorCount) && (inputSize < (1 << 10))); ++inputSize)
+                    for (auto inputSize = 2; ((!errorCount) && (inputSize < (1 << 10))); ++inputSize)
                     {
                         for (int32_t numWorkerThreads = 1; ((!errorCount) && (numWorkerThreads < (int32_t)std::thread::hardware_concurrency())); ++numWorkerThreads)
                         {

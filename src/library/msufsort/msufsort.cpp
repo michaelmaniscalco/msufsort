@@ -1757,8 +1757,16 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
         int32_t numThreads
     )
     {
+        #pragma pack(push, 1)
+        struct index_type
+        {
+            suffix_index value_;
+            std::uint8_t symbol_;
+        };
+        #pragma pack(pop)
+
         auto inputSize = std::distance(inputBegin, inputEnd);
-        std::vector<suffix_index> index;
+        std::vector<index_type> index;
         index.resize(inputSize + 1);
 	    int32_t symbolRange[0x101];
 	    for (auto & e : symbolRange)
@@ -1774,16 +1782,13 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
 		    n += temp;
 	    }
 	    n = 0;
-	    index[0] = sentinelIndex;
+	    index[0] = {sentinelIndex, inputBegin[0]};
 	    for (int32_t i = 0; i < inputSize; i++, n++)
 	    {
 		    n += (i == sentinelIndex);
-		    index[symbolRange[(uint32_t)inputBegin[i] + 1]++] = n;
+            auto k = symbolRange[(uint32_t)inputBegin[i] + 1]++;
+		    index[k] = {n, inputBegin[k - (k >= sentinelIndex)]};
 	    }
-
-	    std::vector<uint8_t> outputBuffer;
-        outputBuffer.resize(index.size());
-        auto outputBegin = outputBuffer.data();
 
         std::size_t maxPartitionsPerThread = 256;
         std::vector<ibwt_partition_info> ibwtPartitionInfo;
@@ -1793,16 +1798,17 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
         ibwtPartitionInfo.reserve(partitionCount + 8192);
         std::size_t maxBytesPerPartition = (((index.size() << 1) - 1) / partitionCount);
 
-        auto firstDecodeIndex = index[0];
-        auto outputCurrent = outputBegin;
+        auto firstDecodeIndex = index[0].value_;
+        auto outputCurrent = inputBegin;
         auto currentIndex = 0;
         while (currentIndex < (std::int32_t)index.size())
         {
             auto partitionSize = maxBytesPerPartition;
             if ((currentIndex + partitionSize) > index.size())
                 partitionSize = (index.size() - currentIndex);
-            ibwtPartitionInfo.push_back({index[currentIndex], index[currentIndex], outputCurrent, outputCurrent, outputCurrent + partitionSize});
-            index[currentIndex] |= 0x80000000;
+            ibwtPartitionInfo.push_back({index[currentIndex].value_, index[currentIndex].value_, outputCurrent, outputCurrent,
+                    ((outputCurrent + partitionSize) <= inputEnd) ? (outputCurrent + partitionSize) : inputEnd});
+            index[currentIndex].value_ |= 0x80000000;
             currentIndex += partitionSize;
             outputCurrent += partitionSize;
         }
@@ -1837,8 +1843,7 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
                 partitionsRemaining -= numPartitions;
                 threads[threadId] = std::move(std::thread(
                         [](
-                            uint8_t * inputBegin,
-                            suffix_index * indexBegin,
+                            index_type * indexBegin,
                             suffix_index sentinelIndex,
                             ibwt_partition_info * partitionBegin, 
                             ibwt_partition_info * partitionEnd
@@ -1855,13 +1860,14 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
                                     {
                                         done = false;
                                         auto i = e.currentIndex_;
-                                        *e.currentOutput_++ = inputBegin[i - (i >= sentinelIndex)];
-                                        e.currentIndex_ = indexBegin[i];
+                                        *e.currentOutput_ = indexBegin[i].symbol_;
+                                        e.currentOutput_ += (i != sentinelIndex);
+                                        e.currentIndex_ = indexBegin[i].value_;
                                     }
                                 }
                             }
                         },
-                        inputBegin, index.data(), sentinelIndex, ibwtPartitionInfo.data() + partitionsRemaining, 
+                        index.data(), sentinelIndex, ibwtPartitionInfo.data() + partitionsRemaining, 
                         ibwtPartitionInfo.data() + partitionsRemaining + numPartitions));
             }
             for (auto & e : threads)
@@ -1873,7 +1879,7 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
                 {
                     auto startIndex = iter->startIndex_;
                     auto endIndex = (iter->currentIndex_ & 0x7fffffff);
-                    if (iter->beginOutput_ != iter->currentOutput_)
+                    if ((iter->currentIndex_ & 0x80000000) || (iter->beginOutput_ != iter->currentOutput_))
                     {
                         decodedInfo.push_back({iter->beginOutput_, iter->currentOutput_, startIndex, endIndex});
                         iter->startIndex_ = endIndex;
@@ -1919,16 +1925,18 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
         for (std::size_t i = 0; i < decodedInfo.size(); ++i)
             if (decodedInfo[i].startIndex_ == firstDecodeIndex)
             {
-                curDec = decodedInfo[currentDecodedIndex].begin_ + 1;
+                curDec = decodedInfo[currentDecodedIndex].begin_;
                 curDecEnd = decodedInfo[currentDecodedIndex].end_;
                 curEndIndex = decodedInfo[currentDecodedIndex].endIndex_;
             }
 
-        auto inputCurrent = inputBegin;
-        while (inputCurrent < inputEnd)
+        auto beginWrite = (std::uint8_t *)index.data();
+        auto currentWrite = beginWrite;
+        auto endWrite = (currentWrite + inputSize);
+        while (currentWrite < endWrite)
         {
-            while ((inputCurrent < inputEnd) && (curDec < curDecEnd))
-                *inputCurrent++ = *curDec++;
+            while ((currentWrite < endWrite) && (curDec < curDecEnd))
+                *currentWrite++ = *curDec++;
             for (std::size_t j = 0; j < decodedInfo.size(); ++j)
                 if (decodedInfo[j].startIndex_ == curEndIndex)
                 {
@@ -1938,6 +1946,7 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
                     break;
                 }
         }
+        std::copy(beginWrite, endWrite, inputBegin);
     }
 
 
