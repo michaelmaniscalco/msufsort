@@ -227,9 +227,9 @@ int32_t main
                 auto errorCount = 0;
                 for (auto numUniqueSymbols = 1; ((!errorCount) && (numUniqueSymbols < 0x100)); ++numUniqueSymbols)
                 {
-                    for (auto inputSize = 2; ((!errorCount) && (inputSize < (1 << 10))); ++inputSize)
+                    for (auto inputSize = 1; ((!errorCount) && (inputSize < (1 << 10))); ++inputSize)
                     {
-                        for (int32_t numWorkerThreads = 1; ((!errorCount) && (numWorkerThreads < (int32_t)std::thread::hardware_concurrency())); ++numWorkerThreads)
+                        for (int32_t numWorkerThreads = 1; ((!errorCount) && (numWorkerThreads <= (int32_t)std::thread::hardware_concurrency())); ++numWorkerThreads)
                         {
                             srand(numUniqueSymbols * inputSize * numWorkerThreads);
                             std::cout << "bwt test: num unique symbols = " << numUniqueSymbols << ", input size = " << inputSize << ", num threads = " << numWorkerThreads << std::endl;
@@ -252,7 +252,7 @@ int32_t main
                 {
                     for (auto inputSize = 1; ((!errorCount) && (inputSize < (1 << 10))); ++inputSize)
                     {
-                        for (int32_t numWorkerThreads = 1; numWorkerThreads < (int32_t)std::thread::hardware_concurrency(); ++numWorkerThreads)
+                        for (int32_t numWorkerThreads = 1; numWorkerThreads <= (int32_t)std::thread::hardware_concurrency(); ++numWorkerThreads)
                         {
                             srand(numUniqueSymbols * inputSize * numWorkerThreads);
                             std::cout << "sa test: num unique symbols = " << numUniqueSymbols << ", input size = " << inputSize << ", num threads = " << numWorkerThreads << std::endl;

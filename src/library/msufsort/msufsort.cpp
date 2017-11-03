@@ -23,7 +23,7 @@ SOFTWARE.
 */
 
 #define USE_EXPERIMENTAL_INVERSE_BWT
-
+//#define VERBOSE
 
 #include "./msufsort.h"
 #include <include/endian.h>
@@ -482,80 +482,80 @@ void maniscalco::msufsort::multikey_quicksort
                 std::swap(*ptr++, *pivotCandidate3);
                 if (pivot2 != pivot3)
                 {
-	                std::swap(*ptrD--, *pivotCandidate5);
-	                --ptrE;
+                    std::swap(*ptrD--, *pivotCandidate5);
+                    --ptrE;
                 }			
 
                 while (ptr < ptrD)
                 {
-	                auto temp = get_value(offsetInputBegin, *ptr);
-	                if (temp <= pivot2)
-	                {
-		                if (temp < pivot2)
-		                {
-			                std::swap(*ptrC++, *ptr);
-			                if (temp <= pivot1)
-			                {
-				                if (temp < pivot1)
-					                std::swap(*ptrA++, *(ptrC - 1));
-				                std::swap(*ptrB++, *(ptrC - 1));
-			                }
-		                }
-		                ++ptr;
-	                }
-	                else
-	                {
-		                std::swap(*ptrD--, *ptr);
-		                if (temp >= pivot3)
-		                {
-			                if (temp > pivot3)
-				                std::swap(*(ptrD + 1), *ptrF--);
-			                std::swap(*(ptrD + 1), *ptrE--);
-		                }
-	                }
+                    auto temp = get_value(offsetInputBegin, *ptr);
+                    if (temp <= pivot2)
+                    {
+	                    if (temp < pivot2)
+	                    {
+		                    std::swap(*ptrC++, *ptr);
+		                    if (temp <= pivot1)
+		                    {
+			                    if (temp < pivot1)
+				                    std::swap(*ptrA++, *(ptrC - 1));
+			                    std::swap(*ptrB++, *(ptrC - 1));
+		                    }
+	                    }
+	                    ++ptr;
+                    }
+                    else
+                    {
+	                    std::swap(*ptrD--, *ptr);
+	                    if (temp >= pivot3)
+	                    {
+		                    if (temp > pivot3)
+			                    std::swap(*(ptrD + 1), *ptrF--);
+		                    std::swap(*(ptrD + 1), *ptrE--);
+	                    }
+                    }
                 }
 
                 if (ptr == ptrD)
                 {
-	                auto temp = get_value(offsetInputBegin, *ptr);
-	                if (temp <= pivot2)
-	                {
-		                if (temp < pivot2)
-		                {
-			                std::swap(*ptrC++, *ptr);
-			                if (temp <= pivot1)
-			                {
-				                if (temp < pivot1)
-					                std::swap(*ptrA++, *(ptrC - 1));
-				                std::swap(*ptrB++, *(ptrC - 1));
-			                }
-		                }
-		                ++ptr;
-	                }
-	                else
-	                {
-		                if (temp >= pivot3)
-		                {
-			                if (temp == pivot3)
-			                {
-				                std::swap(*ptrD, *ptrE);
-			                }
-			                else
-			                {
-				                auto temp2 = *ptr;
-				                *ptrD = *ptrE;
-				                *ptrE = *ptrF;
-				                *ptrF-- = temp2;
-			                }
-			                --ptrE;
-		                }
-		                --ptrD;
-	                }
+                    auto temp = get_value(offsetInputBegin, *ptr);
+                    if (temp <= pivot2)
+                    {
+	                    if (temp < pivot2)
+	                    {
+		                    std::swap(*ptrC++, *ptr);
+		                    if (temp <= pivot1)
+		                    {
+			                    if (temp < pivot1)
+				                    std::swap(*ptrA++, *(ptrC - 1));
+			                    std::swap(*ptrB++, *(ptrC - 1));
+		                    }
+	                    }
+	                    ++ptr;
+                    }
+                    else
+                    {
+	                    if (temp >= pivot3)
+	                    {
+		                    if (temp == pivot3)
+		                    {
+			                    std::swap(*ptrD, *ptrE);
+		                    }
+		                    else
+		                    {
+			                    auto temp2 = *ptr;
+			                    *ptrD = *ptrE;
+			                    *ptrE = *ptrF;
+			                    *ptrF-- = temp2;
+		                    }
+		                    --ptrE;
+	                    }
+	                    --ptrD;
+                    }
                 }
 
                 int32_t szNextMatchLength = (currentMatchLength + sizeof(uint64_t));
                 if (partitionBack != ptrF)
-	                *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrF, partitionBack), currentMatchLength, startingPattern, false};
+                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrF, partitionBack), currentMatchLength, startingPattern, false};
 
                 if (ptrE != ptrF)
                 {
@@ -567,11 +567,11 @@ void maniscalco::msufsort::multikey_quicksort
                     int64_t endIndex = (curIndex - ((currentMatchLength > 2) ? sizeof(uint64_t) : 2));
                     while ((!potentialTandemRepeats) && (--curIndex >= endIndex))
                         potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPattern);
-	                *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrE, ptrF), szNextMatchLength, startingPattern, potentialTandemRepeats};
+                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrE, ptrF), szNextMatchLength, startingPattern, potentialTandemRepeats};
                 }
 
                 if (ptrD != ptrE)
-	                *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrD, ptrE), currentMatchLength, startingPattern, false};
+                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrD, ptrE), currentMatchLength, startingPattern, false};
 
                 if (ptrC <= ptrD)
                 {
@@ -583,11 +583,11 @@ void maniscalco::msufsort::multikey_quicksort
                     int64_t endIndex = (curIndex - ((currentMatchLength > 2) ? sizeof(uint64_t) : 2));
                     while ((!potentialTandemRepeats) && (--curIndex >= endIndex))
                         potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPattern);
-	                *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrC, ptrD) + 1, szNextMatchLength, startingPattern, potentialTandemRepeats};
+                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrC, ptrD) + 1, szNextMatchLength, startingPattern, potentialTandemRepeats};
                 }
 
                 if (ptrC != ptrB)
-	                *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrB, ptrC), currentMatchLength, startingPattern, false};
+                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrB, ptrC), currentMatchLength, startingPattern, false};
 
                 if (ptrA != ptrB)
                 {
@@ -599,12 +599,13 @@ void maniscalco::msufsort::multikey_quicksort
                     int64_t endIndex = (curIndex - ((currentMatchLength > 2) ? sizeof(uint64_t) : 2));
                     while ((!potentialTandemRepeats) && (--curIndex >= endIndex))
                         potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPattern);
-	                *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrA, ptrB), szNextMatchLength, startingPattern, potentialTandemRepeats};
+                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrA, ptrB), szNextMatchLength, startingPattern, potentialTandemRepeats};
                 }
 
                 if (partitionBegin != ptrA)
-	                *partitionStackTop++ = partition_info{(int32_t)std::distance(partitionBegin, ptrA), currentMatchLength, startingPattern, false};
+                    *partitionStackTop++ = partition_info{(int32_t)std::distance(partitionBegin, ptrA), currentMatchLength, startingPattern, false};
             }
+
         }
 
         if (partitionStackTop == partitionStack)
@@ -1457,28 +1458,26 @@ void maniscalco::msufsort::count_suffixes
 (
     uint8_t const * begin,
     uint8_t const * end,
-    int32_t (&aCount)[0x10000],
-    int32_t (&bCount)[0x10000],
-    int32_t (&bStarCount)[0x10000]
+    std::array<int32_t *, 4> count
 )
 {
     if (begin < end)
         return;
-    auto current = begin;
-    auto suffixType = get_suffix_type(current);
-    if (suffixType == suffix_type::bStar)
-        ++bStarCount[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current--)];
-    if ((suffixType == suffix_type::bStar) || (suffixType == suffix_type::b))
-        while ((current >= end) && (current[0] <= current[1]))
-            ++bCount[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current--)];
-    while (current >= end)
+    std::uint32_t state = 0;
+    switch (get_suffix_type(begin))
     {
-        while ((current >= end) && (current[0] >= current[1]))
-            ++aCount[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current--)];
-        if (current >= end)
-            ++bStarCount[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current--)];
-        while ((current >= end) && (current[0] <= current[1]))
-            ++bCount[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current--)];
+        case suffix_type::a: state = 1; break;
+        case suffix_type::b: state = 0; break;
+        case suffix_type::bStar: state = 2; break;
+    }
+    auto current = begin;
+    while (true)
+    {
+        ++count[state & 0x03][endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current)];
+        if (--current < end)
+            break;
+        state <<= ((current[0] != current[1]) | ((state & 0x01) == 0));
+        state |= (current[0] > current[1]);
     }
 }
 
@@ -1488,33 +1487,31 @@ void maniscalco::msufsort::initial_two_byte_radix_sort
 (
     uint8_t const * begin,
     uint8_t const * end,
-    int32_t (&bStarOffset)[0x10000]
+    int32_t * bStarOffset
 )
 {
     if (begin < end)
         return;
-    auto current = begin;
-    auto suffixType = get_suffix_type(current);
-    if (suffixType == suffix_type::bStar)
+    std::uint32_t state = 0;
+    switch (get_suffix_type(begin))
     {
-        int32_t flag = ((current > inputBegin_) && (current[-1] <= current[0])) ? 0 : preceding_suffix_is_type_a_flag;
-        suffixArrayBegin_[bStarOffset[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current)]++] = (std::distance(inputBegin_, current) | flag);
+        case suffix_type::a: state = 1; break;
+        case suffix_type::b: state = 0; break;
+        case suffix_type::bStar: state = 2; break;
     }
-    if ((suffixType == suffix_type::bStar) || (suffixType == suffix_type::b))
-        while ((current >= end) && (current[0] <= current[1]))
-            --current;
-    while (current >= end)
+    auto current = begin;
+    while (true)
     {
-        while ((current >= end) && (current[0] >= current[1]))
-            --current;
-        if (current >= end)
+        if ((state & 0x03) == 2)
         {
             int32_t flag = ((current > inputBegin_) && (current[-1] <= current[0])) ? 0 : preceding_suffix_is_type_a_flag;
             suffixArrayBegin_[bStarOffset[endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current)]++] = 
                         (std::distance(inputBegin_, current) | flag);
         }
-        while ((current >= end) && (current[0] <= current[1]))
-            --current;
+        if (--current < end)
+            break;
+        state <<= ((current[0] != current[1]) | ((state & 0x01) == 0));
+        state |= (current[0] > current[1]);
     }
 }
 
@@ -1530,20 +1527,22 @@ void maniscalco::msufsort::first_stage_its
     auto start = std::chrono::system_clock::now();
     std::unique_ptr<int32_t []> bCount(new int32_t[0x10000]{});
     std::unique_ptr<int32_t []> aCount(new int32_t[0x10000]{});
-    std::unique_ptr<int32_t [][0x10000]> bStarCount(new int32_t[numThreads][0x10000]{});
+    std::unique_ptr<int32_t []> bStarCount(new int32_t[numThreads * 0x10000]{});
     auto numSuffixesPerThread = ((inputSize_ + numThreads - 1) / numThreads);
 
     {
-        std::unique_ptr<int32_t [][0x10000]> threadBCount(new int32_t[numThreads][0x10000]{});
-        std::unique_ptr<int32_t [][0x10000]> threadACount(new int32_t[numThreads][0x10000]{});
+        std::unique_ptr<int32_t []> threadBCount(new int32_t[numThreads * 0x10000]{});
+        std::unique_ptr<int32_t []> threadACount(new int32_t[numThreads * 0x10000]{});
         auto inputCurrent = inputBegin_;
+
         for (auto threadId = 0; threadId < numThreads; ++threadId)
         {
             auto inputEnd = inputCurrent + numSuffixesPerThread;
             if (inputEnd > (inputEnd_ - 1))
                 inputEnd = (inputEnd_ - 1);
-            post_task_to_thread(threadId, &msufsort::count_suffixes, this, inputEnd - 1, inputCurrent, 
-                    std::ref(threadACount[threadId]), std::ref(threadBCount[threadId]), std::ref(bStarCount[threadId]));
+            auto arrayOffset = (threadId * 0x10000);
+            std::array<int32_t *, 4> c({threadBCount.get() + arrayOffset, threadACount.get() + arrayOffset, bStarCount.get() + arrayOffset, threadACount.get() + arrayOffset});
+            post_task_to_thread(threadId, &msufsort::count_suffixes, this, inputEnd - 1, inputCurrent, c);
             inputCurrent = inputEnd;
         }
         wait_for_all_tasks_completed();
@@ -1551,21 +1550,25 @@ void maniscalco::msufsort::first_stage_its
         ++aCount[((uint16_t)inputEnd_[-1]) << 8];
         ++aCount_[inputEnd_[-1]];
         for (auto threadId = 0; threadId < numThreads; ++threadId)
+        {
+            auto arrayOffset = (threadId * 0x10000);
             for (auto j = 0; j < 0x10000; ++j)
             {
-                bCount[j] += threadBCount[threadId][j];
-                bCount_[j >> 8] += threadBCount[threadId][j] + bStarCount[threadId][j];
-                aCount[j] += threadACount[threadId][j];
-                aCount_[j >> 8] += threadACount[threadId][j];
+                bCount[j] += threadBCount[arrayOffset + j];
+                bCount_[j >> 8] += threadBCount[arrayOffset + j] + bStarCount[arrayOffset + j];
+                aCount[j] += threadACount[arrayOffset + j];
+                aCount_[j >> 8] += threadACount[arrayOffset + j];
             }
+        }
     }
 
     // compute bucket offsets into suffix array
     int32_t total = 1;  // 1 for sentinel
     int32_t bStarTotal = 0;
     std::unique_ptr<int32_t []> totalBStarCount(new int32_t[0x10000]{});
-    std::unique_ptr<int32_t [][0x10000]> bStarOffset(new int32_t[numThreads][0x10000]{});
-    std::unique_ptr<std::pair<int32_t, int32_t> []> partitions(new std::pair<int32_t, int32_t>[0x10000]{});
+    std::unique_ptr<int32_t []> bStarOffset(new int32_t[numThreads * 0x10000]{});
+    using partition_info = std::pair<int32_t, int32_t>;
+    std::unique_ptr<partition_info []> partitions(new partition_info[0x10000]{});
     auto numPartitions = 0;
     for (int32_t i = 0; i < 0x100; ++i)
     {
@@ -1576,10 +1579,10 @@ void maniscalco::msufsort::first_stage_its
             auto partitionStartIndex = bStarTotal;
             for (int32_t threadId = 0; threadId < numThreads; ++threadId)
             {
-                bStarOffset[threadId][s] = bStarTotal;
-                totalBStarCount[s] += bStarCount[threadId][s];
-                bStarTotal += bStarCount[threadId][s];
-                bCount[s] += bStarCount[threadId][s];
+                bStarOffset[(threadId * 0x10000) + s] = bStarTotal;
+                totalBStarCount[s] += bStarCount[(threadId * 0x10000) + s];
+                bStarTotal += bStarCount[(threadId * 0x10000) + s];
+                bCount[s] += bStarCount[(threadId * 0x10000) + s];
             }
             total += (bCount[s] + aCount[s]);
             backBucketOffset_[(j << 8) | i] = suffixArrayBegin_ + total;
@@ -1596,7 +1599,7 @@ void maniscalco::msufsort::first_stage_its
         auto inputEnd = inputCurrent + numSuffixesPerThread;
         if (inputEnd > (inputEnd_ - 1))
             inputEnd = (inputEnd_ - 1);
-        post_task_to_thread(threadId, &msufsort::initial_two_byte_radix_sort, this, inputEnd - 1, inputCurrent, std::ref(bStarOffset[threadId]));
+        post_task_to_thread(threadId, &msufsort::initial_two_byte_radix_sort, this, inputEnd - 1, inputCurrent, &bStarOffset[threadId * 0x10000]);
         inputCurrent = inputEnd;
     }
     wait_for_all_tasks_completed();
@@ -1609,6 +1612,8 @@ void maniscalco::msufsort::first_stage_its
     
     // multikey quicksort on B* parititions
     std::atomic<int32_t> partitionCount(numPartitions);
+    // sort partitions so that largest partitions are processed first
+    std::sort(partitions.get(), partitions.get() + partitionCount, [](partition_info const & a, partition_info const & b){return (a.second < b.second);});
     for (auto threadId = 0; threadId < numThreads; ++threadId)
     {
         post_task_to_thread
@@ -1764,7 +1769,7 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
             std::uint8_t symbol_;
         };
         #pragma pack(pop)
-
+auto s1 = std::chrono::system_clock::now();
         auto inputSize = std::distance(inputBegin, inputEnd);
         std::vector<index_type> index;
         index.resize(inputSize + 1);
@@ -1774,6 +1779,8 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
 	    symbolRange[0] = 1;
 	    for (auto inputCurent = inputBegin; inputCurent < inputEnd; ++inputCurent)
 		    symbolRange[((uint32_t)*inputCurent) + 1]++;
+auto s2 = std::chrono::system_clock::now();
+std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count() << std::endl;
 	    int32_t n = 0;
 	    for (auto & e : symbolRange)
 	    {
@@ -1789,7 +1796,8 @@ int32_t maniscalco::msufsort::forward_burrows_wheeler_transform
             auto k = symbolRange[(uint32_t)inputBegin[i] + 1]++;
 		    index[k] = {n, inputBegin[k - (k >= sentinelIndex)]};
 	    }
-
+auto s3 = std::chrono::system_clock::now();
+std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(s3 - s2).count() << std::endl;
         std::size_t maxPartitionsPerThread = 256;
         std::vector<ibwt_partition_info> ibwtPartitionInfo;
         std::size_t partitionCount = (numThreads * maxPartitionsPerThread);

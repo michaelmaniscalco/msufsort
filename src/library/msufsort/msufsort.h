@@ -143,9 +143,7 @@ namespace maniscalco
         (
             uint8_t const *,
             uint8_t const *,
-            int32_t (&)[0x10000],
-            int32_t (&)[0x10000],
-            int32_t (&)[0x10000]
+            std::array<int32_t *, 4>
         );
 
         template <typename F, typename ... argument_types>
@@ -192,7 +190,7 @@ namespace maniscalco
         (
             uint8_t const *,
             uint8_t const *,
-            int32_t (&)[0x10000]
+            int32_t *
         );
 
         struct ibwt_partition_info
