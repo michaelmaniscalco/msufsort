@@ -22,8 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-
 //#define VERBOSE
+
 
 #include "./msufsort.h"
 #include <include/endian.h>
@@ -667,7 +667,6 @@ void maniscalco::msufsort::second_stage_its_right_to_left_pass_multi_threaded
             while ((temp > maxEnd) && (*temp != suffix_is_unsorted_b_type))
                 --temp;
             auto totalSuffixesPerThread = ((std::distance(temp, currentSuffix) + numThreads - 1) / numThreads);
-
             // process suffixes
             for (auto threadId = 0; threadId < numThreads; ++threadId)
             {
@@ -716,7 +715,6 @@ void maniscalco::msufsort::second_stage_its_right_to_left_pass_multi_threaded
                 currentSuffix = endForThisThread;
             }
             wait_for_all_tasks_completed();
-
             // 
             for (auto threadId = 0, begin = 0, numSymbolsPerThread = ((0x100 + numThreads - 1) / numThreads); threadId < numThreads; ++threadId)
             {
@@ -817,26 +815,61 @@ void maniscalco::msufsort::second_stage_its_left_to_right_pass_single_threaded
     auto currentSuffix = suffixArrayBegin_ - 1;
     uint8_t previousPrecedingSymbol = 0;
     auto previousFrontBucketOffset = frontBucketOffset_;
+
+    struct cached
+    {
+        suffix_index precedingSuffixIndex_;
+        uint8_t precedingSymbol_;
+        uint8_t precedingSymbol2_;    
+    };
+    static auto constexpr max_cached = 4098;
+    cached cached_[max_cached];
+    int32_t cachedIndex = 0;
+
     while (++currentSuffix < suffixArrayEnd_)
     {
         auto currentSuffixIndex = *currentSuffix;
+        if ((currentSuffixIndex == preceding_suffix_is_type_a_flag) || (cachedIndex == (max_cached - 1)))
+        {
+            for (auto i = 0; i < cachedIndex; ++i)
+            {
+                auto const & c = cached_[i];
+                int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
+                if (c.precedingSymbol_ != previousPrecedingSymbol)
+                {
+                    previousPrecedingSymbol = c.precedingSymbol_;
+                    previousFrontBucketOffset = frontBucketOffset_ + previousPrecedingSymbol;
+                }
+                *((*previousFrontBucketOffset)++) = (c.precedingSuffixIndex_ | flag);
+            }
+            cachedIndex = 0;
+            currentSuffixIndex = *currentSuffix;
+        }
         if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
         {
             if ((currentSuffixIndex & sa_index_mask) != 0)
             {
                 int32_t precedingSuffixIndex = ((currentSuffixIndex & sa_index_mask) - 1);
-                auto precedingSuffix = (inputBegin_ + precedingSuffixIndex);
-                auto precedingSymbol = precedingSuffix[0];
-                int32_t flag = ((precedingSuffixIndex > 0) && (precedingSuffix[-1] >= precedingSymbol)) ? preceding_suffix_is_type_a_flag : 0;
-                if (precedingSymbol != previousPrecedingSymbol)
-                {
-                    previousPrecedingSymbol = precedingSymbol;
-                    previousFrontBucketOffset = frontBucketOffset_ + previousPrecedingSymbol;
-                }
-                *((*previousFrontBucketOffset)++) = (precedingSuffixIndex | flag);
+                cached_[cachedIndex++] = {precedingSuffixIndex, inputBegin_[precedingSuffixIndex], inputBegin_[precedingSuffixIndex -1]};                
             }
             *(currentSuffix) &= sa_index_mask;
         }
+    }
+
+    if (cachedIndex >= 0)
+    {
+        for (auto i = 0; i < cachedIndex; ++i)
+        {
+            auto const & c = cached_[i];
+            int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
+            if (c.precedingSymbol_ != previousPrecedingSymbol)
+            {
+                previousPrecedingSymbol = c.precedingSymbol_;
+                previousFrontBucketOffset = frontBucketOffset_ + previousPrecedingSymbol;
+            }
+            *((*previousFrontBucketOffset)++) = (c.precedingSuffixIndex_ | flag);
+        }
+        cachedIndex = 0;
     }
 }
 
@@ -902,6 +935,16 @@ void maniscalco::msufsort::second_stage_its_left_to_right_pass_multi_threaded
                     int32_t * suffixCount
                 )
                 {
+                    struct cached
+                    {
+                        suffix_index precedingSuffixIndex_;
+                        uint8_t precedingSymbol_;
+                        uint8_t precedingSymbol2_;    
+                    };
+                    static auto constexpr max_cached = 4098;
+                    cached cached_[max_cached];
+                    int32_t cachedIndex = 0;
+
                     auto current = begin;
                     auto curCache = cache;
                     --current;
@@ -910,27 +953,52 @@ void maniscalco::msufsort::second_stage_its_left_to_right_pass_multi_threaded
                     while (++current != end)
                     {
                         auto currentSuffixIndex = *current;
+
+                        if ((currentSuffixIndex == preceding_suffix_is_type_a_flag) || (cachedIndex == (max_cached - 1)))
+                        {
+                            for (auto i = 0; i < cachedIndex; ++i)
+                            {
+                                auto const & c = cached_[i];
+                                int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
+                                *curCache++ = {c.precedingSymbol_, c.precedingSuffixIndex_ | flag};
+                                if (c.precedingSymbol_ != currentPrecedingSymbol)
+                                {
+                                    suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
+                                    currentPrecedingSymbol = c.precedingSymbol_;
+                                    currentPrecedingSymbolCount = 0;
+                                }
+                                ++currentPrecedingSymbolCount;
+                            }
+                            cachedIndex = 0;
+                            currentSuffixIndex = *current;
+                        }
+
                         if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
                         {
                             currentSuffixIndex &= sa_index_mask;
                             if (currentSuffixIndex != 0)
                             {
                                 int32_t precedingSuffixIndex = (currentSuffixIndex - 1);
-                                auto precedingSuffix = (inputBegin + precedingSuffixIndex);
-                                auto precedingSymbol = precedingSuffix[0];
-                                int32_t flag = ((precedingSuffixIndex > 0) && (precedingSuffix[-1] >= precedingSymbol)) ? preceding_suffix_is_type_a_flag : 0;
-                                *curCache++ = {precedingSymbol, precedingSuffixIndex | flag};
-                                if (precedingSymbol != currentPrecedingSymbol)
-                                {
-                                    suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
-                                    currentPrecedingSymbol = precedingSymbol;
-                                    currentPrecedingSymbolCount = 0;
-                                }
-                                ++currentPrecedingSymbolCount;
+                                cached_[cachedIndex++] = {precedingSuffixIndex, inputBegin[precedingSuffixIndex], inputBegin[precedingSuffixIndex -1]};                
                             }
                             *current = currentSuffixIndex;
                         }
                     }
+
+                    for (auto i = 0; i < cachedIndex; ++i)
+                    {
+                        auto const & c = cached_[i];
+                        int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
+                        *curCache++ = {c.precedingSymbol_, c.precedingSuffixIndex_ | flag};
+                        if (c.precedingSymbol_ != currentPrecedingSymbol)
+                        {
+                            suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
+                            currentPrecedingSymbol = c.precedingSymbol_;
+                            currentPrecedingSymbolCount = 0;
+                        }
+                        ++currentPrecedingSymbolCount;
+                    }
+
                     suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
                     numSuffixes = std::distance(cache, curCache);
                 }, inputBegin_, begin, endForThisThread, cache[threadId].get(), std::ref(numSuffixes[threadId]), sCount[threadId]
@@ -1226,33 +1294,81 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform_left
     auto currentSuffix = suffixArrayBegin_ - 1;
     uint8_t previousPrecedingSymbol = 0;
     auto previousFrontBucketOffset = frontBucketOffset_;
+
+    struct cached
+    {
+        suffix_index * currentSuffix_;
+        suffix_index precedingSuffixIndex_;
+        uint8_t precedingSymbol_;
+        uint8_t precedingSymbol2_;    
+    };
+    static auto constexpr max_cached = 4098;
+    cached cached_[max_cached];
+    int32_t cachedIndex = 0;
+
     while (++currentSuffix < suffixArrayEnd_)
     {
         auto currentSuffixIndex = *currentSuffix;
-        if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
+        if ((currentSuffixIndex == preceding_suffix_is_type_a_flag) || (cachedIndex == (max_cached - 1)))
         {
-            int32_t precedingSuffixIndex = ((currentSuffixIndex & sa_index_mask) - 1);
-            auto precedingSuffix = (inputBegin_ + precedingSuffixIndex);
-            if ((currentSuffixIndex & sa_index_mask) != 0)
+            for (auto i = 0; i < cachedIndex; ++i)
             {
-                auto precedingSymbol = precedingSuffix[0];
-                int32_t flag = ((precedingSuffixIndex > 0) && (precedingSuffix[-1] >= precedingSymbol)) ? preceding_suffix_is_type_a_flag : 0;
-                if (precedingSymbol != previousPrecedingSymbol)
+                auto const & c = cached_[i];
+                int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
+                if (c.precedingSymbol_ != previousPrecedingSymbol)
                 {
-                    previousPrecedingSymbol = precedingSymbol;
+                    previousPrecedingSymbol = c.precedingSymbol_;
                     previousFrontBucketOffset = frontBucketOffset_ + previousPrecedingSymbol;
                 }
                 if (flag)
-                    *((*previousFrontBucketOffset)++) = (precedingSuffixIndex | flag);
+                    *((*previousFrontBucketOffset)++) = (c.precedingSuffixIndex_ | flag);
                 else
-                    *((*previousFrontBucketOffset)++) = ((precedingSuffixIndex > 0) ? precedingSuffix[-1] : preceding_suffix_is_type_a_flag);
+                    *((*previousFrontBucketOffset)++) = ((c.precedingSuffixIndex_ > 0) ? c.precedingSymbol2_ : preceding_suffix_is_type_a_flag);
+                if (c.precedingSuffixIndex_ >= 0)
+                    *c.currentSuffix_ = c.precedingSymbol_;
+                else
+                    sentinel = c.currentSuffix_;
             }
-            if (precedingSuffixIndex >= 0)
-                *currentSuffix = *precedingSuffix;
+            cachedIndex = 0;
+            currentSuffixIndex = *currentSuffix;
+        }
+
+        if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
+        {
+            int32_t precedingSuffixIndex = ((currentSuffixIndex & sa_index_mask) - 1);
+            if ((currentSuffixIndex & sa_index_mask) != 0)
+            {
+                cached_[cachedIndex++] = {currentSuffix, precedingSuffixIndex, inputBegin_[precedingSuffixIndex], inputBegin_[precedingSuffixIndex -1]};                
+            }
             else
-                sentinel = currentSuffix;
+            {
+                if (precedingSuffixIndex >= 0)
+                    *currentSuffix = inputBegin_[precedingSuffixIndex];
+                else
+                    sentinel = currentSuffix;
+            }
         }
     }
+
+    for (auto i = 0; i < cachedIndex; ++i)
+    {
+        auto const & c = cached_[i];
+        int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
+        if (c.precedingSymbol_ != previousPrecedingSymbol)
+        {
+            previousPrecedingSymbol = c.precedingSymbol_;
+            previousFrontBucketOffset = frontBucketOffset_ + previousPrecedingSymbol;
+        }
+        if (flag)
+            *((*previousFrontBucketOffset)++) = (c.precedingSuffixIndex_ | flag);
+        else
+            *((*previousFrontBucketOffset)++) = ((c.precedingSuffixIndex_ > 0) ? c.precedingSymbol2_ : preceding_suffix_is_type_a_flag);
+        if (c.precedingSuffixIndex_ >= 0)
+            *c.currentSuffix_ = c.precedingSymbol_;
+        else
+            sentinel = c.currentSuffix_;
+    }
+
     int32_t sentinelIndex = (int32_t)std::distance(suffixArrayBegin_, sentinel);
     return sentinelIndex;
 }
@@ -1315,6 +1431,19 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform_left
                     int32_t * suffixCount
                 )
                 {
+
+                    struct cached
+                    {
+                        suffix_index * currentSuffix_;
+                        suffix_index precedingSuffixIndex_;
+                        uint8_t precedingSymbol_;
+                        uint8_t precedingSymbol2_;    
+                    };
+                    static auto constexpr max_cached = 4098;
+                    cached cached_[max_cached];
+                    int32_t cachedIndex = 0;
+
+
                     auto current = begin;
                     auto curCache = cache;
                     --current;
@@ -1323,32 +1452,76 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform_left
                     while (++current != end)
                     {
                         auto currentSuffixIndex = *current;
-                        if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
+
+                        if ((currentSuffixIndex == preceding_suffix_is_type_a_flag) || (cachedIndex == (max_cached - 1)))
                         {
-                            int32_t precedingSuffixIndex = ((currentSuffixIndex & sa_index_mask) - 1);
-                            auto precedingSuffix = (inputBegin + precedingSuffixIndex);
-                            if ((currentSuffixIndex & sa_index_mask) != 0)
+                            for (auto i = 0; i < cachedIndex; ++i)
                             {
-                                auto precedingSymbol = precedingSuffix[0];
-                                bool precedingSuffixIsTypeA = ((precedingSuffixIndex == 0) || (precedingSuffix[-1] >= precedingSymbol));
+                                auto const & c = cached_[i];
+                                bool precedingSuffixIsTypeA = ((c.precedingSuffixIndex_ == 0) || (c.precedingSymbol2_ >= c.precedingSymbol_));
                                 int32_t flag = (precedingSuffixIsTypeA) ? preceding_suffix_is_type_a_flag : 0;
                                 if (flag)
-                                    *curCache++ = {precedingSymbol, precedingSuffixIndex | flag};
+                                    *curCache++ = {c.precedingSymbol_, c.precedingSuffixIndex_ | flag};
                                 else
-                                    *curCache++ = {precedingSymbol, (precedingSuffixIndex > 0) ? precedingSuffix[-1] : 0};
-                                if (precedingSymbol != currentPrecedingSymbol)
+                                    *curCache++ = {c.precedingSymbol_, (c.precedingSuffixIndex_ > 0) ? c.precedingSymbol2_ : 0};
+                                if (c.precedingSymbol_ != currentPrecedingSymbol)
                                 {
                                     suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
-                                    currentPrecedingSymbol = precedingSymbol;
+                                    currentPrecedingSymbol = c.precedingSymbol_;
                                     currentPrecedingSymbolCount = 0;
                                 }
                                 ++currentPrecedingSymbolCount;
+
+                                if (c.precedingSuffixIndex_ >= 0)
+                                    *c.currentSuffix_ = c.precedingSymbol_;
+                                else
+                                    sentinel = c.currentSuffix_;
                             }
-                            if (precedingSuffixIndex >= 0)
-                                *current = precedingSuffix[0];
-                            else
-                                sentinel = current;
+                            cachedIndex = 0;
+                            currentSuffixIndex = *current;
                         }
+
+
+                        if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
+                        {
+
+                            int32_t precedingSuffixIndex = ((currentSuffixIndex & sa_index_mask) - 1);
+                            if ((currentSuffixIndex & sa_index_mask) != 0)
+                            {
+                                cached_[cachedIndex++] = {current, precedingSuffixIndex, inputBegin[precedingSuffixIndex], inputBegin[precedingSuffixIndex -1]};                
+                            }
+                            else
+                            {
+                                if (precedingSuffixIndex >= 0)
+                                    *current = inputBegin[precedingSuffixIndex];
+                                else
+                                    sentinel = current;
+                            }
+                        }
+                    }
+
+
+                    for (auto i = 0; i < cachedIndex; ++i)
+                    {
+                        auto const & c = cached_[i];
+                        bool precedingSuffixIsTypeA = ((c.precedingSuffixIndex_ == 0) || (c.precedingSymbol2_ >= c.precedingSymbol_));
+                        int32_t flag = (precedingSuffixIsTypeA) ? preceding_suffix_is_type_a_flag : 0;
+                        if (flag)
+                            *curCache++ = {c.precedingSymbol_, c.precedingSuffixIndex_ | flag};
+                        else
+                            *curCache++ = {c.precedingSymbol_, (c.precedingSuffixIndex_ > 0) ? c.precedingSymbol2_ : 0};
+                        if (c.precedingSymbol_ != currentPrecedingSymbol)
+                        {
+                            suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
+                            currentPrecedingSymbol = c.precedingSymbol_;
+                            currentPrecedingSymbolCount = 0;
+                        }
+                        ++currentPrecedingSymbolCount;
+
+                        if (c.precedingSuffixIndex_ >= 0)
+                            *c.currentSuffix_ = c.precedingSymbol_;
+                        else
+                            sentinel = c.currentSuffix_;
                     }
                     suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
                     numSuffixes = std::distance(cache, curCache);
@@ -1471,13 +1644,13 @@ void maniscalco::msufsort::count_suffixes
         case suffix_type::bStar: state = 2; break;
     }
     auto current = begin;
-    while (true)
+    ++count[state & 0x03][endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current)];
+
+    while (--current >= end)
     {
-        ++count[state & 0x03][endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current)];
-        if (--current < end)
-            break;
         state <<= ((current[0] != current[1]) | ((state & 0x01) == 0));
         state |= (current[0] > current[1]);
+        ++count[state & 0x03][endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current)];
     }
 }
 

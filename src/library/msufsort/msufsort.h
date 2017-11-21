@@ -306,6 +306,7 @@ namespace maniscalco
             bool volatile taskCompleted_;
         };
 
+
         std::unique_ptr<worker_thread []> workerThreads_;
 
         int32_t numWorkerThreads_;
