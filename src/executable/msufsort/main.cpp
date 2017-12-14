@@ -147,69 +147,6 @@ void print_usage
 
 
 //==============================================================================
-void sum
-(
-    void * input
-)
-{
-    auto v = *(std::vector<int> *)input;
-    auto t = 0;
-    for (auto const & e : v)
-        t += e;
-    std::cout << " total = " << t << std::endl;
-}
-
-
-
-class my_thread
-{
-public:
-
-    my_thread():input_(nullptr), task_(nullptr){}
-
-    template <typename input_type>
-    void post_task
-    (
-        void(* task)(void *), 
-        input_type && input
-    ) volatile
-    {
-        input_ = (void *)&input;
-        task_ = task;
-    }
-
-    void wait_for_task_completion
-    (
-    ) const volatile
-    {
-        while (task_ != nullptr)
-            ;
-    }
-
-    void do_work
-    (
-    ) volatile
-    {
-        while (true)
-        {
-            while (task_ == nullptr)
-                ;
-            task_(input_);
-            task_ = nullptr;
-        }
-    }
-
-protected:
-private:
-
-    void * input_;
-    void(* task_)(void *);
-
-};
-
-
-
-//==============================================================================
 int32_t main
 (
     int32_t argumentCount,
@@ -218,38 +155,6 @@ int32_t main
 {
     try
     {
-/*
-
-my_thread * myThread[16] ;
-for (auto & e : myThread)
-{
-    e = new my_thread();
-    std::thread(&my_thread::do_work, e).detach();
-}
-
-std::vector<int> v = {1, 2, 3, 4, 5};
-for (auto & e : myThread)
-{
-    e->post_task(sum, v);
-}
-for (auto & e : myThread)
-{
-    e->wait_for_task_completion();
-}
-
-
-v = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
-for (auto & e : myThread)
-{
-    e->post_task(sum, v);
-}
-for (auto & e : myThread)
-{
-    e->wait_for_task_completion();
-}
-*/
-
-
         if (argumentCount < 3)
         {
             print_usage();
