@@ -99,6 +99,9 @@ namespace maniscalco
 
         struct partition_info
         {
+            partition_info(){}
+            partition_info(int32_t size, int32_t matchLength, uint64_t startingPattern, bool potentialTandemRepeats):
+                size_(size), matchLength_(matchLength), startingPattern_(startingPattern), potentialTandemRepeats_(potentialTandemRepeats){}
             int32_t size_;
             int32_t matchLength_;
             uint64_t startingPattern_;
@@ -195,6 +198,24 @@ namespace maniscalco
 
         struct ibwt_partition_info
         {
+            ibwt_partition_info(){}
+
+            ibwt_partition_info
+            (
+                suffix_index startIndex,
+                suffix_index currentIndex,
+                std::uint8_t * beginOutput,
+                std::uint8_t * currentOutput,
+                std::uint8_t * endOutput
+            ):
+                startIndex_(startIndex),
+                currentIndex_(currentIndex),
+                beginOutput_(beginOutput),
+                currentOutput_(currentOutput),
+                endOutput_(endOutput)
+            {
+            }
+
             suffix_index startIndex_;
             suffix_index currentIndex_;
             std::uint8_t * beginOutput_;

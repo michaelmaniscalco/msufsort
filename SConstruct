@@ -5,14 +5,22 @@ root_dir = os.getcwd() + '/'
 build_dir = root_dir + 'build/'
 src_dir = root_dir + 'src/'
 
+force_include_headers = []
+
+#===============================================================================
+# common defines
+#===============================================================================
+common_compiler_defines = [
+        '-Dforce_inline=__attribute__((always_inline)) inline ',
+        '-Dforce_no_inline=__attribute__((noinline)) '
+        ]
+
 
 #===============================================================================
 # common compiler flags
 #===============================================================================
-
-common_compiler_flags = ['-std=c++11', '-rdynamic', '-pipe', '-pthread', '-Wall', '-Wextra', '-Wno-unused-function']
-debug_compiler_flags = ['-g']
-release_compiler_flags = ['-g', '-O3', '-march=native', '-fno-stack-protector', '-funroll-loops', '-funsafe-loop-optimizations']
+common_compiler_flags = ['-std=c++11', '-rdynamic', '-pipe', '-Wall', '-Wextra', '-Wno-unused-function', '-fPIC']
+common_compiler_flags = common_compiler_flags + force_include_headers
 
 
 #===============================================================================
@@ -36,35 +44,42 @@ release_library_dependency_paths = [build_dir + 'release/lib/']
 #===============================================================================
 # include paths
 #===============================================================================
-
 common_include_paths = []
-debug_include_paths = [build_dir + 'debug/src/']
-release_include_paths = [build_dir + 'release/src/']
+debug_include_paths = common_include_paths + [build_dir + 'debug/src/']
+release_include_paths = common_include_paths + [build_dir + 'release/src/']
+
+
+#===============================================================================
+# optional build flags
+#===============================================================================
+build_executable = ARGUMENTS.get('executable', '1')
+
 
 
 #===============================================================================
 # common environment for all build configurations
 #===============================================================================
-
 common_env = Environment()
+common_env.Append(CPPDEFINES = common_compiler_defines)
 common_env.Append(CXXCOMSTR = 'compiling [$SOURCE]')
 common_env.Append(LINKCOMSTR = 'linking [$TARGET]')
 common_env.Append(ARCOMSTR = 'archiving [$TARGET]')
 common_env.Append(INSTALLSTR = 'installing [$TARGET]')
-common_env.Append(CPPFLAGS = common_compiler_flags)
+common_env.Append(CCFLAGS = common_compiler_flags)
 common_env.Append(LIBS = common_library_dependencies)
 common_env.Append(LIBPATH = common_library_dependency_paths)
-
 
 #===============================================================================
 # release build environment
 #===============================================================================
 
+release_compiler_flags = ['-g', '-O3', '-march=native', '-fno-stack-protector', '-funroll-loops', '-funsafe-loop-optimizations', '-pthread']
+release_compiler_defines = ['RELEASE']
 release_env = common_env.Clone()
-release_env.Append(CPPDEFINES = ['RELEASE'])
+release_env.Append(CPPDEFINES = release_compiler_defines)
 release_env.Append(LIBPATH = release_library_dependency_paths)
 release_env.Append(CPPPATH = release_include_paths)
-release_env.Append(CPPFLAGS = release_compiler_flags)
+release_env.Append(CCFLAGS = release_compiler_flags)
 release_env.Append(LIBS = release_library_dependencies)
 
 
@@ -72,8 +87,10 @@ release_env.Append(LIBS = release_library_dependencies)
 # debug build environment
 #===============================================================================
 
+debug_compiler_flags = ['-g', '-O0', '-pthread']
+debug_compiler_defines = ['DEBUG']
 debug_env = common_env.Clone()
-debug_env.Append(CPPDEFINES = ['DEBUG'])
+debug_env.Append(CPPDEFINES = debug_compiler_defines)
 debug_env.Append(LIBPATH = debug_library_dependency_paths)
 debug_env.Append(CPPPATH = debug_include_paths)
 debug_env.Append(CCFLAGS = debug_compiler_flags)

@@ -22,8 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-//#define VERBOSE
 
+//#define VERBOSE
 
 #include "./msufsort.h"
 #include <include/endian.h>
@@ -99,7 +99,7 @@ void maniscalco::msufsort::wait_for_all_tasks_completed
 
 
 //==============================================================================
-inline auto maniscalco::msufsort::get_suffix_type
+force_inline auto maniscalco::msufsort::get_suffix_type
 (
     uint8_t const * suffix
 ) -> suffix_type 
@@ -125,7 +125,7 @@ inline auto maniscalco::msufsort::get_suffix_type
 
 
 //==============================================================================
-inline uint64_t maniscalco::msufsort::get_value
+force_inline uint64_t maniscalco::msufsort::get_value
 (
     uint8_t const * inputCurrent,
     suffix_index index
@@ -143,7 +143,7 @@ inline uint64_t maniscalco::msufsort::get_value
 
 
 //==============================================================================
-inline bool maniscalco::msufsort::compare_suffixes
+force_inline bool maniscalco::msufsort::compare_suffixes
 (
     uint8_t const * inputBegin,
     suffix_index indexA,
@@ -166,7 +166,7 @@ inline bool maniscalco::msufsort::compare_suffixes
 
 
 //==============================================================================
-inline void maniscalco::msufsort::insertion_sort
+void maniscalco::msufsort::insertion_sort
 (
     // private:
     // sorts the suffixes by insertion sort
@@ -463,9 +463,7 @@ void maniscalco::msufsort::multikey_quicksort
                 if (pivotCandidateValue4 > pivotCandidateValue5)
 	                std::swap(*pivotCandidate4, *pivotCandidate5), std::swap(pivotCandidateValue4, pivotCandidateValue5);
 
-                auto pivot1 = pivotCandidateValue1;
-                auto pivot2 = pivotCandidateValue3;
-                auto pivot3 = pivotCandidateValue5;
+                std::uint64_t pivot[3] = {pivotCandidateValue1, pivotCandidateValue5, pivotCandidateValue3};
 
                 auto ptrA = partitionBegin;
                 auto ptrB = partitionBegin;
@@ -477,10 +475,10 @@ void maniscalco::msufsort::multikey_quicksort
                 auto ptr = partitionBegin;
 
                 std::swap(*ptr++, *pivotCandidate1);
-                ptrC += (pivot1 != pivot2);
-                ptrB += (pivot1 != pivot2);
+                ptrC += (pivot[0] != pivot[2]);
+                ptrB += (pivot[0] != pivot[2]);
                 std::swap(*ptr++, *pivotCandidate3);
-                if (pivot2 != pivot3)
+                if (pivot[2] != pivot[1])
                 {
                     std::swap(*ptrD--, *pivotCandidate5);
                     --ptrE;
@@ -489,14 +487,14 @@ void maniscalco::msufsort::multikey_quicksort
                 while (ptr < ptrD)
                 {
                     auto temp = get_value(offsetInputBegin, *ptr);
-                    if (temp <= pivot2)
+                    if (temp <= pivot[2])
                     {
-	                    if (temp < pivot2)
+	                    if (temp < pivot[2])
 	                    {
 		                    std::swap(*ptrC++, *ptr);
-		                    if (temp <= pivot1)
+		                    if (temp <= pivot[0])
 		                    {
-			                    if (temp < pivot1)
+			                    if (temp < pivot[0])
 				                    std::swap(*ptrA++, *(ptrC - 1));
 			                    std::swap(*ptrB++, *(ptrC - 1));
 		                    }
@@ -506,9 +504,9 @@ void maniscalco::msufsort::multikey_quicksort
                     else
                     {
 	                    std::swap(*ptrD--, *ptr);
-	                    if (temp >= pivot3)
+	                    if (temp >= pivot[1])
 	                    {
-		                    if (temp > pivot3)
+		                    if (temp > pivot[1])
 			                    std::swap(*(ptrD + 1), *ptrF--);
 		                    std::swap(*(ptrD + 1), *ptrE--);
 	                    }
@@ -518,14 +516,14 @@ void maniscalco::msufsort::multikey_quicksort
                 if (ptr == ptrD)
                 {
                     auto temp = get_value(offsetInputBegin, *ptr);
-                    if (temp <= pivot2)
+                    if (temp <= pivot[2])
                     {
-	                    if (temp < pivot2)
+	                    if (temp < pivot[2])
 	                    {
 		                    std::swap(*ptrC++, *ptr);
-		                    if (temp <= pivot1)
+		                    if (temp <= pivot[0])
 		                    {
-			                    if (temp < pivot1)
+			                    if (temp < pivot[0])
 				                    std::swap(*ptrA++, *(ptrC - 1));
 			                    std::swap(*ptrB++, *(ptrC - 1));
 		                    }
@@ -534,9 +532,9 @@ void maniscalco::msufsort::multikey_quicksort
                     }
                     else
                     {
-	                    if (temp >= pivot3)
+	                    if (temp >= pivot[1])
 	                    {
-		                    if (temp == pivot3)
+		                    if (temp == pivot[1])
 		                    {
 			                    std::swap(*ptrD, *ptrE);
 		                    }
@@ -553,21 +551,23 @@ void maniscalco::msufsort::multikey_quicksort
                     }
                 }
 
+
                 int32_t szNextMatchLength = (currentMatchLength + sizeof(uint64_t));
                 if (partitionBack != ptrF)
                     *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrF, partitionBack), currentMatchLength, startingPattern, false};
 
                 if (ptrE != ptrF)
                 {
+                    auto startingPatternE = startingPattern;
                     if (currentMatchLength == 2)
-                        startingPattern = get_value(inputBegin_, *ptrE);
+                        startingPatternE = get_value(inputBegin_, *ptrE);
                     potentialTandemRepeats = false;
                     int64_t suffixIndex = ((*ptrE) & sa_index_mask);
                     int64_t curIndex = (suffixIndex + currentMatchLength);
                     int64_t endIndex = (curIndex - ((currentMatchLength > 2) ? sizeof(uint64_t) : 2));
                     while ((!potentialTandemRepeats) && (--curIndex >= endIndex))
-                        potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPattern);
-                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrE, ptrF), szNextMatchLength, startingPattern, potentialTandemRepeats};
+                        potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPatternE);
+                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrE, ptrF), szNextMatchLength, startingPatternE, potentialTandemRepeats};
                 }
 
                 if (ptrD != ptrE)
@@ -575,15 +575,16 @@ void maniscalco::msufsort::multikey_quicksort
 
                 if (ptrC <= ptrD)
                 {
+                    auto startingPatternC = startingPattern;
                     if (currentMatchLength == 2)
-                        startingPattern = get_value(inputBegin_, *ptrC);
+                        startingPatternC = get_value(inputBegin_, *ptrC);
                     potentialTandemRepeats = false;
                     int64_t suffixIndex = ((*ptrC) & sa_index_mask);
                     int64_t curIndex = (suffixIndex + currentMatchLength);
                     int64_t endIndex = (curIndex - ((currentMatchLength > 2) ? sizeof(uint64_t) : 2));
                     while ((!potentialTandemRepeats) && (--curIndex >= endIndex))
-                        potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPattern);
-                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrC, ptrD) + 1, szNextMatchLength, startingPattern, potentialTandemRepeats};
+                        potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPatternC);
+                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrC, ptrD) + 1, szNextMatchLength, startingPatternC, potentialTandemRepeats};
                 }
 
                 if (ptrC != ptrB)
@@ -591,15 +592,16 @@ void maniscalco::msufsort::multikey_quicksort
 
                 if (ptrA != ptrB)
                 {
+                    auto startingPatternA = startingPattern;
                     if (currentMatchLength == 2)
-                        startingPattern = get_value(inputBegin_, *ptrA);
+                        startingPatternA = get_value(inputBegin_, *ptrA);
                     potentialTandemRepeats = false;
                     int64_t suffixIndex = ((*ptrA) & sa_index_mask);
                     int64_t curIndex = (suffixIndex + currentMatchLength);
                     int64_t endIndex = (curIndex - ((currentMatchLength > 2) ? sizeof(uint64_t) : 2));
                     while ((!potentialTandemRepeats) && (--curIndex >= endIndex))
-                        potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPattern);
-                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrA, ptrB), szNextMatchLength, startingPattern, potentialTandemRepeats};
+                        potentialTandemRepeats = (get_value(inputBegin_, curIndex) == startingPatternA);
+                    *partitionStackTop++ = partition_info{(int32_t)std::distance(ptrA, ptrB), szNextMatchLength, startingPatternA, potentialTandemRepeats};
                 }
 
                 if (partitionBegin != ptrA)
@@ -617,13 +619,12 @@ void maniscalco::msufsort::multikey_quicksort
             std::cout << "msufsort: multikey quicksort stack overflow" << std::endl;
             throw std::exception();
         }
-
         auto partitionInfo = *--partitionStackTop;
         partitionEnd = partitionBegin + partitionInfo.size_;
         currentMatchLength = partitionInfo.matchLength_;
         startingPattern = partitionInfo.startingPattern_;
         potentialTandemRepeats = partitionInfo.potentialTandemRepeats_;
-    }			
+    }
 }
 
 
@@ -667,6 +668,7 @@ void maniscalco::msufsort::second_stage_its_right_to_left_pass_multi_threaded
             while ((temp > maxEnd) && (*temp != suffix_is_unsorted_b_type))
                 --temp;
             auto totalSuffixesPerThread = ((std::distance(temp, currentSuffix) + numThreads - 1) / numThreads);
+
             // process suffixes
             for (auto threadId = 0; threadId < numThreads; ++threadId)
             {
@@ -715,6 +717,7 @@ void maniscalco::msufsort::second_stage_its_right_to_left_pass_multi_threaded
                 currentSuffix = endForThisThread;
             }
             wait_for_all_tasks_completed();
+
             // 
             for (auto threadId = 0, begin = 0, numSymbolsPerThread = ((0x100 + numThreads - 1) / numThreads); threadId < numThreads; ++threadId)
             {
@@ -815,61 +818,26 @@ void maniscalco::msufsort::second_stage_its_left_to_right_pass_single_threaded
     auto currentSuffix = suffixArrayBegin_ - 1;
     uint8_t previousPrecedingSymbol = 0;
     auto previousFrontBucketOffset = frontBucketOffset_;
-
-    struct cached
-    {
-        suffix_index precedingSuffixIndex_;
-        uint8_t precedingSymbol_;
-        uint8_t precedingSymbol2_;    
-    };
-    static auto constexpr max_cached = 4098;
-    cached cached_[max_cached];
-    int32_t cachedIndex = 0;
-
     while (++currentSuffix < suffixArrayEnd_)
     {
         auto currentSuffixIndex = *currentSuffix;
-        if ((currentSuffixIndex == preceding_suffix_is_type_a_flag) || (cachedIndex == (max_cached - 1)))
-        {
-            for (auto i = 0; i < cachedIndex; ++i)
-            {
-                auto const & c = cached_[i];
-                int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
-                if (c.precedingSymbol_ != previousPrecedingSymbol)
-                {
-                    previousPrecedingSymbol = c.precedingSymbol_;
-                    previousFrontBucketOffset = frontBucketOffset_ + previousPrecedingSymbol;
-                }
-                *((*previousFrontBucketOffset)++) = (c.precedingSuffixIndex_ | flag);
-            }
-            cachedIndex = 0;
-            currentSuffixIndex = *currentSuffix;
-        }
         if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
         {
             if ((currentSuffixIndex & sa_index_mask) != 0)
             {
                 int32_t precedingSuffixIndex = ((currentSuffixIndex & sa_index_mask) - 1);
-                cached_[cachedIndex++] = {precedingSuffixIndex, inputBegin_[precedingSuffixIndex], inputBegin_[precedingSuffixIndex -1]};                
+                auto precedingSuffix = (inputBegin_ + precedingSuffixIndex);
+                auto precedingSymbol = precedingSuffix[0];
+                int32_t flag = ((precedingSuffixIndex > 0) && (precedingSuffix[-1] >= precedingSymbol)) ? preceding_suffix_is_type_a_flag : 0;
+                if (precedingSymbol != previousPrecedingSymbol)
+                {
+                    previousPrecedingSymbol = precedingSymbol;
+                    previousFrontBucketOffset = frontBucketOffset_ + previousPrecedingSymbol;
+                }
+                *((*previousFrontBucketOffset)++) = (precedingSuffixIndex | flag);
             }
             *(currentSuffix) &= sa_index_mask;
         }
-    }
-
-    if (cachedIndex >= 0)
-    {
-        for (auto i = 0; i < cachedIndex; ++i)
-        {
-            auto const & c = cached_[i];
-            int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
-            if (c.precedingSymbol_ != previousPrecedingSymbol)
-            {
-                previousPrecedingSymbol = c.precedingSymbol_;
-                previousFrontBucketOffset = frontBucketOffset_ + previousPrecedingSymbol;
-            }
-            *((*previousFrontBucketOffset)++) = (c.precedingSuffixIndex_ | flag);
-        }
-        cachedIndex = 0;
     }
 }
 
@@ -935,16 +903,6 @@ void maniscalco::msufsort::second_stage_its_left_to_right_pass_multi_threaded
                     int32_t * suffixCount
                 )
                 {
-                    struct cached
-                    {
-                        suffix_index precedingSuffixIndex_;
-                        uint8_t precedingSymbol_;
-                        uint8_t precedingSymbol2_;    
-                    };
-                    static auto constexpr max_cached = 4098;
-                    cached cached_[max_cached];
-                    int32_t cachedIndex = 0;
-
                     auto current = begin;
                     auto curCache = cache;
                     --current;
@@ -953,52 +911,27 @@ void maniscalco::msufsort::second_stage_its_left_to_right_pass_multi_threaded
                     while (++current != end)
                     {
                         auto currentSuffixIndex = *current;
-
-                        if ((currentSuffixIndex == preceding_suffix_is_type_a_flag) || (cachedIndex == (max_cached - 1)))
-                        {
-                            for (auto i = 0; i < cachedIndex; ++i)
-                            {
-                                auto const & c = cached_[i];
-                                int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
-                                *curCache++ = {c.precedingSymbol_, c.precedingSuffixIndex_ | flag};
-                                if (c.precedingSymbol_ != currentPrecedingSymbol)
-                                {
-                                    suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
-                                    currentPrecedingSymbol = c.precedingSymbol_;
-                                    currentPrecedingSymbolCount = 0;
-                                }
-                                ++currentPrecedingSymbolCount;
-                            }
-                            cachedIndex = 0;
-                            currentSuffixIndex = *current;
-                        }
-
                         if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
                         {
                             currentSuffixIndex &= sa_index_mask;
                             if (currentSuffixIndex != 0)
                             {
                                 int32_t precedingSuffixIndex = (currentSuffixIndex - 1);
-                                cached_[cachedIndex++] = {precedingSuffixIndex, inputBegin[precedingSuffixIndex], inputBegin[precedingSuffixIndex -1]};                
+                                auto precedingSuffix = (inputBegin + precedingSuffixIndex);
+                                auto precedingSymbol = precedingSuffix[0];
+                                int32_t flag = ((precedingSuffixIndex > 0) && (precedingSuffix[-1] >= precedingSymbol)) ? preceding_suffix_is_type_a_flag : 0;
+                                *curCache++ = {precedingSymbol, precedingSuffixIndex | flag};
+                                if (precedingSymbol != currentPrecedingSymbol)
+                                {
+                                    suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
+                                    currentPrecedingSymbol = precedingSymbol;
+                                    currentPrecedingSymbolCount = 0;
+                                }
+                                ++currentPrecedingSymbolCount;
                             }
                             *current = currentSuffixIndex;
                         }
                     }
-
-                    for (auto i = 0; i < cachedIndex; ++i)
-                    {
-                        auto const & c = cached_[i];
-                        int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
-                        *curCache++ = {c.precedingSymbol_, c.precedingSuffixIndex_ | flag};
-                        if (c.precedingSymbol_ != currentPrecedingSymbol)
-                        {
-                            suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
-                            currentPrecedingSymbol = c.precedingSymbol_;
-                            currentPrecedingSymbolCount = 0;
-                        }
-                        ++currentPrecedingSymbolCount;
-                    }
-
                     suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
                     numSuffixes = std::distance(cache, curCache);
                 }, inputBegin_, begin, endForThisThread, cache[threadId].get(), std::ref(numSuffixes[threadId]), sCount[threadId]
@@ -1294,81 +1227,33 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform_left
     auto currentSuffix = suffixArrayBegin_ - 1;
     uint8_t previousPrecedingSymbol = 0;
     auto previousFrontBucketOffset = frontBucketOffset_;
-
-    struct cached
-    {
-        suffix_index * currentSuffix_;
-        suffix_index precedingSuffixIndex_;
-        uint8_t precedingSymbol_;
-        uint8_t precedingSymbol2_;    
-    };
-    static auto constexpr max_cached = 4098;
-    cached cached_[max_cached];
-    int32_t cachedIndex = 0;
-
     while (++currentSuffix < suffixArrayEnd_)
     {
         auto currentSuffixIndex = *currentSuffix;
-        if ((currentSuffixIndex == preceding_suffix_is_type_a_flag) || (cachedIndex == (max_cached - 1)))
-        {
-            for (auto i = 0; i < cachedIndex; ++i)
-            {
-                auto const & c = cached_[i];
-                int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
-                if (c.precedingSymbol_ != previousPrecedingSymbol)
-                {
-                    previousPrecedingSymbol = c.precedingSymbol_;
-                    previousFrontBucketOffset = frontBucketOffset_ + previousPrecedingSymbol;
-                }
-                if (flag)
-                    *((*previousFrontBucketOffset)++) = (c.precedingSuffixIndex_ | flag);
-                else
-                    *((*previousFrontBucketOffset)++) = ((c.precedingSuffixIndex_ > 0) ? c.precedingSymbol2_ : preceding_suffix_is_type_a_flag);
-                if (c.precedingSuffixIndex_ >= 0)
-                    *c.currentSuffix_ = c.precedingSymbol_;
-                else
-                    sentinel = c.currentSuffix_;
-            }
-            cachedIndex = 0;
-            currentSuffixIndex = *currentSuffix;
-        }
-
         if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
         {
             int32_t precedingSuffixIndex = ((currentSuffixIndex & sa_index_mask) - 1);
+            auto precedingSuffix = (inputBegin_ + precedingSuffixIndex);
             if ((currentSuffixIndex & sa_index_mask) != 0)
             {
-                cached_[cachedIndex++] = {currentSuffix, precedingSuffixIndex, inputBegin_[precedingSuffixIndex], inputBegin_[precedingSuffixIndex -1]};                
-            }
-            else
-            {
-                if (precedingSuffixIndex >= 0)
-                    *currentSuffix = inputBegin_[precedingSuffixIndex];
+                auto precedingSymbol = precedingSuffix[0];
+                int32_t flag = ((precedingSuffixIndex > 0) && (precedingSuffix[-1] >= precedingSymbol)) ? preceding_suffix_is_type_a_flag : 0;
+                if (precedingSymbol != previousPrecedingSymbol)
+                {
+                    previousPrecedingSymbol = precedingSymbol;
+                    previousFrontBucketOffset = frontBucketOffset_ + previousPrecedingSymbol;
+                }
+                if (flag)
+                    *((*previousFrontBucketOffset)++) = (precedingSuffixIndex | flag);
                 else
-                    sentinel = currentSuffix;
+                    *((*previousFrontBucketOffset)++) = ((precedingSuffixIndex > 0) ? precedingSuffix[-1] : preceding_suffix_is_type_a_flag);
             }
+            if (precedingSuffixIndex >= 0)
+                *currentSuffix = *precedingSuffix;
+            else
+                sentinel = currentSuffix;
         }
     }
-
-    for (auto i = 0; i < cachedIndex; ++i)
-    {
-        auto const & c = cached_[i];
-        int32_t flag = ((c.precedingSuffixIndex_ > 0) && (c.precedingSymbol2_ >= c.precedingSymbol_)) ? preceding_suffix_is_type_a_flag : 0;
-        if (c.precedingSymbol_ != previousPrecedingSymbol)
-        {
-            previousPrecedingSymbol = c.precedingSymbol_;
-            previousFrontBucketOffset = frontBucketOffset_ + previousPrecedingSymbol;
-        }
-        if (flag)
-            *((*previousFrontBucketOffset)++) = (c.precedingSuffixIndex_ | flag);
-        else
-            *((*previousFrontBucketOffset)++) = ((c.precedingSuffixIndex_ > 0) ? c.precedingSymbol2_ : preceding_suffix_is_type_a_flag);
-        if (c.precedingSuffixIndex_ >= 0)
-            *c.currentSuffix_ = c.precedingSymbol_;
-        else
-            sentinel = c.currentSuffix_;
-    }
-
     int32_t sentinelIndex = (int32_t)std::distance(suffixArrayBegin_, sentinel);
     return sentinelIndex;
 }
@@ -1431,19 +1316,6 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform_left
                     int32_t * suffixCount
                 )
                 {
-
-                    struct cached
-                    {
-                        suffix_index * currentSuffix_;
-                        suffix_index precedingSuffixIndex_;
-                        uint8_t precedingSymbol_;
-                        uint8_t precedingSymbol2_;    
-                    };
-                    static auto constexpr max_cached = 4098;
-                    cached cached_[max_cached];
-                    int32_t cachedIndex = 0;
-
-
                     auto current = begin;
                     auto curCache = cache;
                     --current;
@@ -1452,76 +1324,32 @@ int32_t maniscalco::msufsort::second_stage_its_as_burrows_wheeler_transform_left
                     while (++current != end)
                     {
                         auto currentSuffixIndex = *current;
-
-                        if ((currentSuffixIndex == preceding_suffix_is_type_a_flag) || (cachedIndex == (max_cached - 1)))
+                        if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
                         {
-                            for (auto i = 0; i < cachedIndex; ++i)
+                            int32_t precedingSuffixIndex = ((currentSuffixIndex & sa_index_mask) - 1);
+                            auto precedingSuffix = (inputBegin + precedingSuffixIndex);
+                            if ((currentSuffixIndex & sa_index_mask) != 0)
                             {
-                                auto const & c = cached_[i];
-                                bool precedingSuffixIsTypeA = ((c.precedingSuffixIndex_ == 0) || (c.precedingSymbol2_ >= c.precedingSymbol_));
+                                auto precedingSymbol = precedingSuffix[0];
+                                bool precedingSuffixIsTypeA = ((precedingSuffixIndex == 0) || (precedingSuffix[-1] >= precedingSymbol));
                                 int32_t flag = (precedingSuffixIsTypeA) ? preceding_suffix_is_type_a_flag : 0;
                                 if (flag)
-                                    *curCache++ = {c.precedingSymbol_, c.precedingSuffixIndex_ | flag};
+                                    *curCache++ = {precedingSymbol, precedingSuffixIndex | flag};
                                 else
-                                    *curCache++ = {c.precedingSymbol_, (c.precedingSuffixIndex_ > 0) ? c.precedingSymbol2_ : 0};
-                                if (c.precedingSymbol_ != currentPrecedingSymbol)
+                                    *curCache++ = {precedingSymbol, (precedingSuffixIndex > 0) ? precedingSuffix[-1] : 0};
+                                if (precedingSymbol != currentPrecedingSymbol)
                                 {
                                     suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
-                                    currentPrecedingSymbol = c.precedingSymbol_;
+                                    currentPrecedingSymbol = precedingSymbol;
                                     currentPrecedingSymbolCount = 0;
                                 }
                                 ++currentPrecedingSymbolCount;
-
-                                if (c.precedingSuffixIndex_ >= 0)
-                                    *c.currentSuffix_ = c.precedingSymbol_;
-                                else
-                                    sentinel = c.currentSuffix_;
                             }
-                            cachedIndex = 0;
-                            currentSuffixIndex = *current;
-                        }
-
-
-                        if (currentSuffixIndex & preceding_suffix_is_type_a_flag)
-                        {
-
-                            int32_t precedingSuffixIndex = ((currentSuffixIndex & sa_index_mask) - 1);
-                            if ((currentSuffixIndex & sa_index_mask) != 0)
-                            {
-                                cached_[cachedIndex++] = {current, precedingSuffixIndex, inputBegin[precedingSuffixIndex], inputBegin[precedingSuffixIndex -1]};                
-                            }
+                            if (precedingSuffixIndex >= 0)
+                                *current = precedingSuffix[0];
                             else
-                            {
-                                if (precedingSuffixIndex >= 0)
-                                    *current = inputBegin[precedingSuffixIndex];
-                                else
-                                    sentinel = current;
-                            }
+                                sentinel = current;
                         }
-                    }
-
-
-                    for (auto i = 0; i < cachedIndex; ++i)
-                    {
-                        auto const & c = cached_[i];
-                        bool precedingSuffixIsTypeA = ((c.precedingSuffixIndex_ == 0) || (c.precedingSymbol2_ >= c.precedingSymbol_));
-                        int32_t flag = (precedingSuffixIsTypeA) ? preceding_suffix_is_type_a_flag : 0;
-                        if (flag)
-                            *curCache++ = {c.precedingSymbol_, c.precedingSuffixIndex_ | flag};
-                        else
-                            *curCache++ = {c.precedingSymbol_, (c.precedingSuffixIndex_ > 0) ? c.precedingSymbol2_ : 0};
-                        if (c.precedingSymbol_ != currentPrecedingSymbol)
-                        {
-                            suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
-                            currentPrecedingSymbol = c.precedingSymbol_;
-                            currentPrecedingSymbolCount = 0;
-                        }
-                        ++currentPrecedingSymbolCount;
-
-                        if (c.precedingSuffixIndex_ >= 0)
-                            *c.currentSuffix_ = c.precedingSymbol_;
-                        else
-                            sentinel = c.currentSuffix_;
                     }
                     suffixCount[currentPrecedingSymbol] += currentPrecedingSymbolCount;
                     numSuffixes = std::distance(cache, curCache);
@@ -1644,13 +1472,13 @@ void maniscalco::msufsort::count_suffixes
         case suffix_type::bStar: state = 2; break;
     }
     auto current = begin;
-    ++count[state & 0x03][endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current)];
-
-    while (--current >= end)
+    while (true)
     {
+        ++count[state & 0x03][endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current)];
+        if (--current < end)
+            break;
         state <<= ((current[0] != current[1]) | ((state & 0x01) == 0));
         state |= (current[0] > current[1]);
-        ++count[state & 0x03][endian_swap<host_order_type, big_endian_type>(*(uint16_t const *)current)];
     }
 }
 
@@ -1937,18 +1765,19 @@ void maniscalco::msufsort::reverse_burrows_wheeler_transform
     #pragma pack(push, 1)
     struct index_type
     {
+        index_type(){}
+        index_type(suffix_index v, std::uint8_t s){value_ = v; symbol_ = s;}
         suffix_index value_;
         std::uint8_t symbol_;
     };
     #pragma pack(pop)
-
     auto inputSize = std::distance(inputBegin, inputEnd);
     std::vector<index_type> index;
     index.resize(inputSize + 1);
 
     {
         // populate 'index'
-        std::int32_t symbolRange[numThreads][0x100];
+        std::int32_t symbolRange[numThreads][0x100] ={{}};
         auto bytesPerThread = ((inputSize + numThreads - 1) / numThreads);
         std::vector<std::thread> threads;
         threads.resize(numThreads);
@@ -1966,13 +1795,9 @@ void maniscalco::msufsort::reverse_burrows_wheeler_transform
                         int32_t * result
                     )
                     {
-                        std::int32_t symbolCount[0x10000];
-                        for (auto i = 0; i < 0x10000; ++i)
-                            symbolCount[i] = 0;
+                        std::int32_t symbolCount[0x10000] = {};
                         for (auto i = 0; i < size - 1; i += 2)
                             ++symbolCount[*(uint16_t const *)(data + i)];
-                        for (auto i = 0; i < 0x100; ++i)
-                            result[i] = 0;
                         for (auto i = 0; i < 0x10000; ++i)
                         {
                             result[i & 0xff] += symbolCount[i];
@@ -1985,7 +1810,6 @@ void maniscalco::msufsort::reverse_burrows_wheeler_transform
         }
         for (auto & e : threads)
             e.join();
-
         int32_t n = 1;
         for (auto i = 0; i < 0x100; ++i)
         {
@@ -2056,6 +1880,20 @@ void maniscalco::msufsort::reverse_burrows_wheeler_transform
     threads.resize(numThreads);
     struct decoded_info
     {
+        decoded_info(){}
+        decoded_info
+        (
+            std::uint8_t const * begin,
+            std::uint8_t const * end,
+            suffix_index startIndex,
+            suffix_index endIndex
+        ):
+            begin_(begin),
+            end_(end),
+            startIndex_(startIndex),
+            endIndex_(endIndex)
+        {
+        }
         std::uint8_t const * begin_;
         std::uint8_t const * end_;
         suffix_index startIndex_;
@@ -2066,7 +1904,8 @@ void maniscalco::msufsort::reverse_burrows_wheeler_transform
     decodedInfo.reserve(8192);
 
     std::vector<std::pair<std::uint8_t *, std::uint8_t *>> availableDecodeSpace;
-    availableDecodeSpace.reserve(8192);
+    availableDecodeSpace.reserve(2048);
+
     while (!ibwtPartitionInfo.empty())
     {
         auto partitionsRemaining = ibwtPartitionInfo.size();
@@ -2156,16 +1995,17 @@ void maniscalco::msufsort::reverse_burrows_wheeler_transform
         }
     }
 
-    auto currentDecodedIndex = 0;
     std::uint8_t const * curDec = nullptr;
     std::uint8_t const * curDecEnd = nullptr;
     suffix_index curEndIndex = 0;
+
     for (std::size_t i = 0; i < decodedInfo.size(); ++i)
         if (decodedInfo[i].startIndex_ == firstDecodeIndex)
         {
-            curDec = decodedInfo[currentDecodedIndex].begin_;
-            curDecEnd = decodedInfo[currentDecodedIndex].end_;
-            curEndIndex = decodedInfo[currentDecodedIndex].endIndex_;
+            curDec = decodedInfo[i].begin_;
+            curDecEnd = decodedInfo[i].end_;
+            curEndIndex = decodedInfo[i].endIndex_;
+            break;
         }
 
     auto beginWrite = (std::uint8_t *)index.data();
@@ -2184,6 +2024,7 @@ void maniscalco::msufsort::reverse_burrows_wheeler_transform
                 break;
             }
     }
+
     std::copy(beginWrite, endWrite, inputBegin);
 }
 
