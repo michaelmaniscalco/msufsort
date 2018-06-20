@@ -32,7 +32,7 @@ namespace
             inputA += sizeof(int64_t), inputB += sizeof(int64_t); 
         endInput += sizeof(int64_t);
         while ((inputB < endInput) && (*inputA == *inputB))
-            inputA ++, inputB++;
+            ++inputA, ++inputB;
         return (inputA - (beginInput + indexA));
     }
 
@@ -51,7 +51,6 @@ namespace
         {
             for (auto i = 0; i < size; ++i)
                 begin[i] = match_length(beginInput, endInput, begin[i], begin[i + 1], currentMatchLength);
-            return;
         }
         else
         {

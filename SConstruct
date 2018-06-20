@@ -26,7 +26,6 @@ common_compiler_flags = common_compiler_flags + force_include_headers
 #===============================================================================
 # library dependencies
 #===============================================================================
-
 common_library_dependencies = ['pthread']
 debug_library_dependencies = []
 release_library_dependencies = []
@@ -35,7 +34,6 @@ release_library_dependencies = []
 #===============================================================================
 # library dependency paths
 #===============================================================================
-
 common_library_dependency_paths = []
 debug_library_dependency_paths = [build_dir + 'debug/lib/']
 release_library_dependency_paths = [build_dir + 'release/lib/']
@@ -55,7 +53,6 @@ release_include_paths = common_include_paths + [build_dir + 'release/src/']
 build_executable = ARGUMENTS.get('executable', '1')
 
 
-
 #===============================================================================
 # common environment for all build configurations
 #===============================================================================
@@ -68,11 +65,12 @@ common_env.Append(INSTALLSTR = 'installing [$TARGET]')
 common_env.Append(CCFLAGS = common_compiler_flags)
 common_env.Append(LIBS = common_library_dependencies)
 common_env.Append(LIBPATH = common_library_dependency_paths)
+common_env.Clean('.', build_dir)
+
 
 #===============================================================================
 # release build environment
 #===============================================================================
-
 release_compiler_flags = ['-g', '-O3', '-march=native', '-fno-stack-protector', '-funroll-loops', '-funsafe-loop-optimizations', '-pthread']
 release_compiler_defines = ['RELEASE']
 release_env = common_env.Clone()
@@ -86,7 +84,6 @@ release_env.Append(LIBS = release_library_dependencies)
 #===============================================================================
 # debug build environment
 #===============================================================================
-
 debug_compiler_flags = ['-g', '-O0', '-pthread']
 debug_compiler_defines = ['DEBUG']
 debug_env = common_env.Clone()
@@ -100,7 +97,6 @@ debug_env.Append(LIBS = debug_library_dependencies)
 #===============================================================================
 # construct list of environments to build.  default is 'all'
 #===============================================================================
-
 build_config = ARGUMENTS.get('config', 'all')
 env_dict = {}
 if build_config == 'release' or build_config == 'all':
@@ -112,7 +108,6 @@ if build_config == 'debug' or build_config == 'all':
 #===============================================================================
 # optional build flags
 #===============================================================================
-
 build_executable = ARGUMENTS.get('executable', '1')
 
 
