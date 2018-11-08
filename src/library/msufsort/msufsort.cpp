@@ -227,31 +227,31 @@ void maniscalco::msufsort::multikey_insertion_sort
     suffix_index * partitionEnd,
     std::int32_t currentMatchLength,
     suffix_value startingPattern,
-    suffix_value endingPattern,
-    std::vector<partition_info> & partitionStack,
-    std::vector<tandem_repeat_info> & tandemRepeatStack,
-    tandem_repeat_setting hasPotentialTandemRepeats
+    std::array<suffix_value, 2> endingPattern,
+    std::vector<tandem_repeat_info> & tandemRepeatStack
 )
 {
+    std::int32_t partitionSize = (std::int32_t)std::distance(partitionBegin, partitionEnd);
+    if (partitionSize < 2)
+        return;
     struct partition_info
     {
         std::int32_t currentMatchLength_;
         std::int32_t size_;
         suffix_value startingPattern_;
         suffix_value endingPattern_;
-        
-        tandem_repeat_setting hasPotentialTandemRepeats_;
+        bool hasPotentialTandemRepeats_;
     };
     partition_info stack[insertion_sort_threshold];
-    stack[0] = {currentMatchLength, (std::int32_t)std::distance(partitionBegin, partitionEnd), startingPattern, endingPattern, hasPotentialTandemRepeats};
+    stack[0] = {currentMatchLength, partitionSize, startingPattern, endingPattern[0], false};
     auto stackTop = stack + 1;
 
     while (stackTop-- != stack)
     {
         auto currentMatchLength = stackTop->currentMatchLength_;
         auto size = stackTop->size_;
-        endingPattern = stackTop->endingPattern_;
-        hasPotentialTandemRepeats = stackTop->hasPotentialTandemRepeats_;
+        endingPattern[0] = stackTop->endingPattern_;
+        auto hasPotentialTandemRepeats = stackTop->hasPotentialTandemRepeats_;
         startingPattern = stackTop->startingPattern_;
 
         if (size <= 2)
@@ -262,16 +262,17 @@ void maniscalco::msufsort::multikey_insertion_sort
         }
         else
         {
-            if (currentMatchLength >= (2 + (std::int32_t)sizeof(suffix_value)))
+            if (currentMatchLength >= min_match_length_for_tandem_repeats)
             {
-                if ((tandemRepeatSortEnabled_) && (hasPotentialTandemRepeats == tandem_repeat_setting::possible)
-                    && (tandem_repeat_sort(partitionBegin, partitionBegin + size, currentMatchLength, startingPattern, endingPattern, partitionStack, tandemRepeatStack)))
+                if (hasPotentialTandemRepeats)
                 {
-                    partitionBegin += size;
-                    continue;
+                    auto tandemRepeatCount = partition_tandem_repeats(partitionBegin, partitionBegin + size, currentMatchLength, tandemRepeatStack);
+                    size -= tandemRepeatCount;
+                    partitionBegin += tandemRepeatCount;
+                    if (size == 0)
+                        continue;
                 }
             }
-
             suffix_value value[insertion_sort_threshold];
             value[0] = get_value(inputBegin_ + currentMatchLength, partitionBegin[0]);
             for (std::int32_t i = 1; i < size; ++i)
@@ -298,40 +299,36 @@ void maniscalco::msufsort::multikey_insertion_sort
                 while ((i >= 0) && (value[i] == startValue))
                     --i;
                 auto partitionSize = (start - i);
-                tandem_repeat_setting potentialTandemRepeats = (partitionSize > 1) ? 
-                        has_potential_tandem_repeats(currentMatchLength, startingPattern, {endingPattern, startValue}) : tandem_repeat_setting::not_possible;
+                auto potentialTandemRepeats = has_potential_tandem_repeats(startingPattern, {endingPattern[0], startValue});
                 if (nextMatchLength == (2 + sizeof(suffix_value)))
-                    startingPattern = get_value(inputBegin_, *partitionBegin); // use startValue etc...
+                    startingPattern = get_value(inputBegin_, *partitionBegin);
                 *stackTop++ = partition_info{nextMatchLength, partitionSize, startingPattern, startValue, potentialTandemRepeats};
             }
-
         }
     }
 }
 
 
 //==============================================================================
-inline auto maniscalco::msufsort::has_potential_tandem_repeats
+inline bool maniscalco::msufsort::has_potential_tandem_repeats
 (
-    std::int32_t currentMatchLength,
     suffix_value startingPattern,
-    std::array<suffix_value, 2> const & endingPattern
-) const -> tandem_repeat_setting
+    std::array<suffix_value, 2> endingPattern
+) const
 {
     if (!tandemRepeatSortEnabled_)
-        return tandem_repeat_setting::not_possible;
-    std::int8_t const * begin = ((std::int8_t const *)endingPattern.data() + sizeof(suffix_value));
-    std::int8_t const * end = begin;
-    end -= ((currentMatchLength > 2) ? sizeof(suffix_value) : 0);
-    while (begin != end)
-        if (*(suffix_value const *)--begin == startingPattern)
-            return tandem_repeat_setting::possible;
-    return tandem_repeat_setting::not_possible;
+        return false;
+    std::int8_t const * end = (std::int8_t const *)endingPattern.data();
+    std::int8_t const * begin = end + sizeof(suffix_value);
+    while (begin > end)
+        if (*(suffix_value const *)--begin == *(suffix_value *)&startingPattern)
+            return true;
+    return false;
 }
 
 
 //==============================================================================
-bool maniscalco::msufsort::tandem_repeat_sort
+std::size_t maniscalco::msufsort::partition_tandem_repeats
 (
     // private:
     // the tandem repeat sort.  determines if the suffixes provided are tandem repeats
@@ -341,12 +338,10 @@ bool maniscalco::msufsort::tandem_repeat_sort
     suffix_index * partitionBegin,
     suffix_index * partitionEnd,
     std::int32_t currentMatchLength,
-    suffix_value startingPattern,
-    suffix_value endingPattern,
-    std::vector<partition_info> & partitionStack,
     std::vector<tandem_repeat_info> & tandemRepeatStack
 )
 {
+    auto parititionSize = std::distance(partitionBegin, partitionEnd);
     std::sort(partitionBegin, partitionEnd, [](suffix_index a, suffix_index b) -> bool{return ((a & sa_index_mask) < (b & sa_index_mask));});
     std::int32_t tandemRepeatLength = 0;
     auto const halfCurrentMatchLength = (currentMatchLength >> 1);
@@ -361,7 +356,7 @@ bool maniscalco::msufsort::tandem_repeat_sort
         previousSuffixIndex = currentSuffixIndex;
     }
     if (tandemRepeatLength == 0)
-        return false; // no tandem repeats were found
+        return 0; // no tandem repeats were found
     // tandem repeats detected.
     suffix_index * terminatorsEnd = partitionEnd - 1;
     previousSuffixIndex = (partitionEnd[-1] & sa_index_mask);
@@ -374,10 +369,8 @@ bool maniscalco::msufsort::tandem_repeat_sort
     }
     auto numTerminators = (std::distance(partitionBegin, terminatorsEnd) + 1);
     std::reverse(partitionBegin, partitionEnd);
-    auto terminatorsBegin = partitionEnd - numTerminators;
     tandemRepeatStack.push_back(tandem_repeat_info(partitionBegin, partitionEnd, (std::int32_t)numTerminators, tandemRepeatLength));
-    multikey_quicksort(terminatorsBegin, partitionEnd, currentMatchLength, startingPattern, endingPattern, partitionStack, tandemRepeatStack);
-    return true;
+    return (parititionSize - numTerminators);
 }
 
 
@@ -489,7 +482,7 @@ inline void maniscalco::msufsort::complete_tandem_repeat
 
 
 //==============================================================================
-void maniscalco::msufsort::multikey_quicksort
+auto maniscalco::msufsort::multikey_quicksort
 (
     // private:
     // multi key quicksort on the input data provided
@@ -497,226 +490,130 @@ void maniscalco::msufsort::multikey_quicksort
     suffix_index * suffixArrayEnd,
     std::int32_t currentMatchLength,
     suffix_value startingPattern,
-    suffix_value endingPattern,
-    std::vector<partition_info> & partitionStack,
+    std::array<suffix_value, 2> endingPattern,
     std::vector<tandem_repeat_info> & tandemRepeatStack
-)
+) -> suffix_index *
 {
-    auto initialStackSize = partitionStack.size();
-    auto partitionSize = std::distance(suffixArrayBegin, suffixArrayEnd);
-    if (partitionSize < insertion_sort_threshold)
+    std::uint64_t partitionSize = std::distance(suffixArrayBegin, suffixArrayEnd);
+    if (partitionSize < 2)
+        return suffixArrayEnd;
+
+    if (currentMatchLength >= min_match_length_for_tandem_repeats)
     {
-        if (partitionSize > 1)
-		    multikey_insertion_sort(suffixArrayBegin, suffixArrayEnd, currentMatchLength, startingPattern, endingPattern, partitionStack, tandemRepeatStack, tandem_repeat_setting::not_possible);
-        return;
+        if (currentMatchLength == min_match_length_for_tandem_repeats)
+            startingPattern = get_value(inputBegin_, *suffixArrayBegin);
+        if ((partitionSize > 1) && (has_potential_tandem_repeats(startingPattern, endingPattern)))
+            suffixArrayBegin += partition_tandem_repeats(suffixArrayBegin, suffixArrayEnd, currentMatchLength, tandemRepeatStack);
+        partitionSize = std::distance(suffixArrayBegin, suffixArrayEnd);
     }
 
-    auto partitionBegin = suffixArrayBegin;
-    auto partitionEnd = suffixArrayEnd;
-    auto potentialTandemRepeats = tandem_repeat_setting::not_possible;
-
-    while (true)
+    if (partitionSize < insertion_sort_threshold)
     {
-        auto partitionSize = std::distance(partitionBegin, partitionEnd);
-        if (partitionSize < insertion_sort_threshold)
+        multikey_insertion_sort(suffixArrayBegin, suffixArrayEnd, currentMatchLength, startingPattern, endingPattern, tandemRepeatStack);
+        return suffixArrayEnd;
+    }
+
+    // select three pivots
+    auto offsetInputBegin = inputBegin_ + currentMatchLength;
+    auto oneSixthOfPartitionSize = (partitionSize * 2863311531) >> 34; // divide by 6 ... crazy!
+    auto pivotCandidate1 = suffixArrayBegin + oneSixthOfPartitionSize;
+    auto pivotCandidate2 = pivotCandidate1 + oneSixthOfPartitionSize;
+    auto pivotCandidate3 = pivotCandidate2 + oneSixthOfPartitionSize;
+    auto pivotCandidate4 = pivotCandidate3 + oneSixthOfPartitionSize;
+    auto pivotCandidate5 = pivotCandidate4 + oneSixthOfPartitionSize;
+    auto pivotCandidateValue1 = get_value(offsetInputBegin, *pivotCandidate1);
+    auto pivotCandidateValue2 = get_value(offsetInputBegin, *pivotCandidate2);
+    auto pivotCandidateValue3 = get_value(offsetInputBegin, *pivotCandidate3);
+    auto pivotCandidateValue4 = get_value(offsetInputBegin, *pivotCandidate4);
+    auto pivotCandidateValue5 = get_value(offsetInputBegin, *pivotCandidate5);
+    if (pivotCandidateValue1 > pivotCandidateValue2)
+        std::swap(*pivotCandidate1, *pivotCandidate2), std::swap(pivotCandidateValue1, pivotCandidateValue2);
+    if (pivotCandidateValue4 > pivotCandidateValue5)
+        std::swap(*pivotCandidate4, *pivotCandidate5), std::swap(pivotCandidateValue4, pivotCandidateValue5);
+    if (pivotCandidateValue1 > pivotCandidateValue3)
+        std::swap(*pivotCandidate1, *pivotCandidate3), std::swap(pivotCandidateValue1, pivotCandidateValue3);
+    if (pivotCandidateValue2 > pivotCandidateValue3)
+        std::swap(*pivotCandidate2, *pivotCandidate3), std::swap(pivotCandidateValue2, pivotCandidateValue3);
+    if (pivotCandidateValue1 > pivotCandidateValue4)
+        std::swap(*pivotCandidate1, *pivotCandidate4), std::swap(pivotCandidateValue1, pivotCandidateValue4);
+    if (pivotCandidateValue3 > pivotCandidateValue4)
+        std::swap(*pivotCandidate3, *pivotCandidate4), std::swap(pivotCandidateValue3, pivotCandidateValue4);
+    if (pivotCandidateValue2 > pivotCandidateValue5)
+        std::swap(*pivotCandidate2, *pivotCandidate5), std::swap(pivotCandidateValue2, pivotCandidateValue5);
+    if (pivotCandidateValue2 > pivotCandidateValue3)
+        std::swap(*pivotCandidate2, *pivotCandidate3), std::swap(pivotCandidateValue2, pivotCandidateValue3);
+    if (pivotCandidateValue4 > pivotCandidateValue5)
+        std::swap(*pivotCandidate4, *pivotCandidate5), std::swap(pivotCandidateValue4, pivotCandidateValue5);
+    auto pivot1 = pivotCandidateValue1;
+    auto pivot2 = pivotCandidateValue3;
+    auto pivot3 = pivotCandidateValue5;
+
+    // partition seven ways
+    auto curSuffix = suffixArrayBegin;
+    auto beginPivot1 = suffixArrayBegin;
+    auto endPivot1 = suffixArrayBegin;
+    auto beginPivot2 = suffixArrayBegin;
+    auto endPivot2 = suffixArrayEnd - 1;
+    auto beginPivot3 = endPivot2;
+    auto endPivot3 = endPivot2;
+
+    std::swap(*curSuffix++, *pivotCandidate1);
+    beginPivot2 += (pivot1 != pivot2);
+    endPivot1 += (pivot1 != pivot2);
+    std::swap(*curSuffix++, *pivotCandidate3);
+    if (pivot2 != pivot3)
+    {
+        std::swap(*endPivot2--, *pivotCandidate5);
+        --beginPivot3;
+    }
+    auto currentValue = get_value(offsetInputBegin, *curSuffix);
+    auto nextValue = get_value(offsetInputBegin, curSuffix[1]);
+    auto nextDValue = get_value(offsetInputBegin, *endPivot2);
+
+    while (curSuffix <= endPivot2)
+    {
+        if (currentValue <= pivot2)
         {
-            if (partitionSize > 1)
-                multikey_insertion_sort(partitionBegin, partitionEnd, currentMatchLength, startingPattern, endingPattern, partitionStack, tandemRepeatStack, potentialTandemRepeats);
-            partitionBegin = partitionEnd;
+            auto temp = nextValue;
+            nextValue = get_value(offsetInputBegin, curSuffix[2]);
+            if (currentValue < pivot2)
+            {
+                std::swap(*beginPivot2, *curSuffix);
+                if (currentValue <= pivot1)
+                {
+                    if (currentValue < pivot1)
+	                    std::swap(*beginPivot1++, *beginPivot2);
+                    std::swap(*endPivot1++, *beginPivot2);
+                }
+                ++beginPivot2;
+            }
+            ++curSuffix;
+            currentValue = temp;
         }
         else
         {
-            if (potentialTandemRepeats == tandem_repeat_setting::possible)
+            auto nextValue = get_value(offsetInputBegin, endPivot2[-1]);
+            std::swap(*endPivot2, *curSuffix);
+            if (currentValue >= pivot3)
             {
-                potentialTandemRepeats = tandem_repeat_setting::not_possible;
-	            if (!tandem_repeat_sort(partitionBegin, partitionEnd, currentMatchLength, startingPattern, endingPattern, partitionStack, tandemRepeatStack))
-                    continue;
-		        partitionBegin = partitionEnd;
+                if (currentValue > pivot3)
+                    std::swap(*endPivot2, *endPivot3--);
+                std::swap(*endPivot2, *beginPivot3--);
             }
-            else
-            {
-                // median indexes
-                auto offsetInputBegin = inputBegin_ + currentMatchLength;
-                auto oneSixthOfPartitionSize = partitionSize / 6;
-                auto pivotCandidate1 = partitionBegin + oneSixthOfPartitionSize;
-                auto pivotCandidate2 = pivotCandidate1 + oneSixthOfPartitionSize;
-                auto pivotCandidate3 = pivotCandidate2 + oneSixthOfPartitionSize;
-                auto pivotCandidate4 = pivotCandidate3 + oneSixthOfPartitionSize;
-                auto pivotCandidate5 = pivotCandidate4 + oneSixthOfPartitionSize;
-
-                auto pivotCandidateValue1 = get_value(offsetInputBegin, *pivotCandidate1);
-                auto pivotCandidateValue2 = get_value(offsetInputBegin, *pivotCandidate2);
-                auto pivotCandidateValue3 = get_value(offsetInputBegin, *pivotCandidate3);
-                auto pivotCandidateValue4 = get_value(offsetInputBegin, *pivotCandidate4);
-                auto pivotCandidateValue5 = get_value(offsetInputBegin, *pivotCandidate5);
-
-                if (pivotCandidateValue1 > pivotCandidateValue2)
-	                std::swap(*pivotCandidate1, *pivotCandidate2), std::swap(pivotCandidateValue1, pivotCandidateValue2);
-                if (pivotCandidateValue4 > pivotCandidateValue5)
-	                std::swap(*pivotCandidate4, *pivotCandidate5), std::swap(pivotCandidateValue4, pivotCandidateValue5);
-                if (pivotCandidateValue1 > pivotCandidateValue3)
-	                std::swap(*pivotCandidate1, *pivotCandidate3), std::swap(pivotCandidateValue1, pivotCandidateValue3);
-                if (pivotCandidateValue2 > pivotCandidateValue3)
-	                std::swap(*pivotCandidate2, *pivotCandidate3), std::swap(pivotCandidateValue2, pivotCandidateValue3);
-                if (pivotCandidateValue1 > pivotCandidateValue4)
-	                std::swap(*pivotCandidate1, *pivotCandidate4), std::swap(pivotCandidateValue1, pivotCandidateValue4);
-                if (pivotCandidateValue3 > pivotCandidateValue4)
-	                std::swap(*pivotCandidate3, *pivotCandidate4), std::swap(pivotCandidateValue3, pivotCandidateValue4);
-                if (pivotCandidateValue2 > pivotCandidateValue5)
-	                std::swap(*pivotCandidate2, *pivotCandidate5), std::swap(pivotCandidateValue2, pivotCandidateValue5);
-                if (pivotCandidateValue2 > pivotCandidateValue3)
-	                std::swap(*pivotCandidate2, *pivotCandidate3), std::swap(pivotCandidateValue2, pivotCandidateValue3);
-                if (pivotCandidateValue4 > pivotCandidateValue5)
-	                std::swap(*pivotCandidate4, *pivotCandidate5), std::swap(pivotCandidateValue4, pivotCandidateValue5);
-
-                auto pivot1 = pivotCandidateValue1;
-                auto pivot2 = pivotCandidateValue3;
-                auto pivot3 = pivotCandidateValue5;
-
-                auto ptrA = partitionBegin;
-                auto ptrB = partitionBegin;
-                auto ptrC = partitionBegin;
-                auto partitionBack = partitionEnd - 1;
-                auto ptrD = partitionBack;
-                auto ptrE = partitionBack;
-                auto ptrF = partitionBack;
-                auto ptr = partitionBegin;
-
-                std::swap(*ptr++, *pivotCandidate1);
-                ptrC += (pivot1 != pivot2);
-                ptrB += (pivot1 != pivot2);
-                std::swap(*ptr++, *pivotCandidate3);
-                if (pivot2 != pivot3)
-                {
-                    std::swap(*ptrD--, *pivotCandidate5);
-                    --ptrE;
-                }			
-                while (ptr < ptrD)
-                {
-                    auto temp = get_value(offsetInputBegin, *ptr);
-                    if (temp <= pivot2)
-                    {
-	                    if (temp < pivot2)
-	                    {
-		                    std::swap(*ptrC, *ptr);
-		                    if (temp <= pivot1)
-		                    {
-			                    if (temp < pivot1)
-				                    std::swap(*ptrA++, *ptrC);
-			                    std::swap(*ptrB++, *ptrC);
-		                    }
-                            ++ptrC;
-	                    }
-	                    ++ptr;
-                    }
-                    else
-                    {
-	                    std::swap(*ptrD, *ptr);
-	                    if (temp >= pivot3)
-	                    {
-		                    if (temp > pivot3)
-			                    std::swap(*ptrD, *ptrF--);
-		                    std::swap(*ptrD, *ptrE--);
-	                    }
-                        --ptrD;
-                    }
-
-                }
-
-                if (ptr == ptrD)
-                {
-                    auto temp = get_value(offsetInputBegin, *ptr);
-                    if (temp <= pivot2)
-                    {
-	                    if (temp < pivot2)
-	                    {
-		                    std::swap(*ptrC, *ptr);
-		                    if (temp <= pivot1)
-		                    {
-			                    if (temp < pivot1)
-				                    std::swap(*ptrA++, *ptrC);
-			                    std::swap(*ptrB++, *ptrC);
-		                    }
-                            ++ptrC;
-	                    }
-	                    ++ptr;
-                    }
-                    else
-                    {
-	                    if (temp >= pivot3)
-	                    {
-		                    if (temp == pivot3)
-		                    {
-			                    std::swap(*ptrD, *ptrE);
-		                    }
-		                    else
-		                    {
-			                    auto temp2 = *ptr;
-			                    *ptrD = *ptrE;
-			                    *ptrE = *ptrF;
-			                    *ptrF-- = temp2;
-		                    }
-		                    --ptrE;
-	                    }
-	                    --ptrD;
-                    }
-                }
-
-                std::int32_t szNextMatchLength = (currentMatchLength + sizeof(suffix_value));
-                if (partitionBack != ptrF)
-                    partitionStack.push_back(partition_info(std::distance(ptrF, partitionBack), currentMatchLength, startingPattern, endingPattern, tandem_repeat_setting::not_possible));
-
-                if (ptrF != ptrE)
-                {
-                    auto startingPattern3 = startingPattern;
-                    if (currentMatchLength == 2)
-                        startingPattern3 = get_value(inputBegin_, ptrE[1]);
-                    auto partitionSize = (std::int32_t)std::distance(ptrE, ptrF);
-                    potentialTandemRepeats = (partitionSize > 1) ? has_potential_tandem_repeats(currentMatchLength, startingPattern3, {endingPattern, pivot3}) :
-                            tandem_repeat_setting::not_possible;
-                    partitionStack.push_back(partition_info(partitionSize, szNextMatchLength, startingPattern3, pivot3, potentialTandemRepeats));
-                }
-
-                if (ptrD != ptrE)
-                    partitionStack.push_back(partition_info(std::distance(ptrD, ptrE), currentMatchLength, startingPattern, endingPattern, tandem_repeat_setting::not_possible));
-
-                auto startingPattern2 = startingPattern;
-                if (currentMatchLength == 2)
-                    startingPattern2 = get_value(inputBegin_, *ptrC);
-                partitionSize = ((std::int32_t)std::distance(ptrC, ptrD) + 1);
-                potentialTandemRepeats = (partitionSize > 1) ? has_potential_tandem_repeats(currentMatchLength, startingPattern2, {endingPattern, pivot2}) : 
-                        tandem_repeat_setting::not_possible;
-                partitionStack.push_back(partition_info(partitionSize, szNextMatchLength, startingPattern2, pivot2, potentialTandemRepeats));
-
-                if (ptrC != ptrB)
-                    partitionStack.push_back(partition_info(std::distance(ptrB, ptrC), currentMatchLength, startingPattern, endingPattern, tandem_repeat_setting::not_possible));
-
-                if (ptrA != ptrB)
-                {
-                    auto startingPattern1 = startingPattern;
-                    if (currentMatchLength == 2)
-                        startingPattern1 = get_value(inputBegin_, *ptrA);
-                    partitionSize = (std::int32_t)std::distance(ptrA, ptrB);
-                    potentialTandemRepeats = (partitionSize > 1) ? has_potential_tandem_repeats(currentMatchLength, startingPattern1, {endingPattern, pivot1}) :
-                            tandem_repeat_setting::not_possible;
-                    partitionStack.push_back(partition_info(partitionSize, szNextMatchLength, startingPattern1, pivot1, potentialTandemRepeats));
-                }
-
-                if (partitionBegin != ptrA)
-                    partitionStack.push_back(partition_info(std::distance(partitionBegin, ptrA), currentMatchLength, startingPattern, endingPattern, tandem_repeat_setting::not_possible));
-            }
+            --endPivot2;
+            currentValue = nextDValue;
+            nextDValue = nextValue;
         }
-
-        if (partitionStack.size() == initialStackSize)
-	        break;	// sorted completed
-        partition_info partitionInfo = partitionStack.back();
-        partitionStack.pop_back();
-        partitionEnd = partitionBegin + partitionInfo.size_;
-        currentMatchLength = partitionInfo.matchLength_;
-        startingPattern = partitionInfo.startingPattern_;
-        potentialTandemRepeats = partitionInfo.potentialTandemRepeats_;
-        endingPattern = partitionInfo.endingPattern_;
     }
+
+    multikey_quicksort(suffixArrayBegin, beginPivot1, currentMatchLength, startingPattern, endingPattern, tandemRepeatStack);
+    multikey_quicksort(beginPivot1, endPivot1, (currentMatchLength + sizeof(suffix_value)), startingPattern, {endingPattern[1], pivot1}, tandemRepeatStack);
+    multikey_quicksort(endPivot1, beginPivot2, currentMatchLength, startingPattern, endingPattern, tandemRepeatStack);
+    multikey_quicksort(beginPivot2, ++endPivot2, (currentMatchLength + sizeof(suffix_value)), startingPattern, {endingPattern[1], pivot2}, tandemRepeatStack);
+    multikey_quicksort(endPivot2, ++beginPivot3, currentMatchLength, startingPattern, endingPattern, tandemRepeatStack);
+    multikey_quicksort(beginPivot3, ++endPivot3, (currentMatchLength + sizeof(suffix_value)), startingPattern, {endingPattern[1], pivot3}, tandemRepeatStack);
+    multikey_quicksort(endPivot3, suffixArrayEnd, currentMatchLength, startingPattern, endingPattern, tandemRepeatStack);
+    return suffixArrayEnd;
 }
 
 
@@ -1714,8 +1611,6 @@ void maniscalco::msufsort::first_stage_its
                 std::vector<tandem_repeat_info> & tandemRepeatStack
             )
             {
-                std::vector<partition_info> partitionStack;
-                partitionStack.reserve(1 << 16);
                 while (true)
                 {
                     std::int32_t partitionIndex = --partitionCount;
@@ -1723,7 +1618,7 @@ void maniscalco::msufsort::first_stage_its
                         break;
                     auto const & partition = partitions[partitionIndex];
                     multikey_quicksort(suffixArrayBegin_ + std::get<0>(partition), suffixArrayBegin_ + std::get<0>(partition) + 
-                            std::get<1>(partition), 2, 0, std::get<2>(partition), partitionStack, tandemRepeatStack);
+                            std::get<1>(partition), 2, 0, {0, std::get<2>(partition)}, tandemRepeatStack);
                 }
             },
             std::ref(tandemRepeatStack[threadId])

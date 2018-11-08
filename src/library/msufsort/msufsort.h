@@ -42,34 +42,35 @@ namespace maniscalco
     {
     public:
 
-        using suffix_index = int32_t;
+static auto constexpr max_radix_size = (1 << 16);
+        using suffix_index = std::int32_t;
         using suffix_array = std::vector<suffix_index>;
 
         msufsort
         (
-            int32_t = 1
+            std::int32_t = 1
         );
 
         ~msufsort();
 
         suffix_array make_suffix_array
         (
-	        uint8_t const *,
-            uint8_t const *
+	        std::uint8_t const *,
+            std::uint8_t const *
         );
 
         int32_t forward_burrows_wheeler_transform
         (
-	        uint8_t *,
-            uint8_t *
+	        std::uint8_t *,
+            std::uint8_t *
         );
 
         static void reverse_burrows_wheeler_transform
         (
-	        uint8_t *,
-            uint8_t *,
-            int32_t,
-            int32_t
+	        std::uint8_t *,
+            std::uint8_t *,
+            std::int32_t,
+            std::int32_t
         );
  
     protected:
@@ -90,44 +91,14 @@ namespace maniscalco
         static std::int32_t constexpr sa_index_mask = ~(preceding_suffix_is_type_a_flag | mark_isa_when_sorted);
         static std::int32_t constexpr suffix_is_unsorted_b_type = sa_index_mask;
 
-        static constexpr int32_t insertion_sort_threshold = 16;
-
-        enum class tandem_repeat_setting : bool
-        {
-            not_possible    = false,
-            possible        = true
-        };
+        static constexpr std::int32_t insertion_sort_threshold = 16;
+        static std::int32_t constexpr min_match_length_for_tandem_repeats = (2 + sizeof(suffix_value) + sizeof(suffix_value));
 
         enum suffix_type 
         {
             a,
             b,
             bStar
-        };
-
-        struct partition_info
-        {
-            partition_info
-            (
-                std::int32_t size, 
-                std::int32_t matchLength, 
-                suffix_value startingPattern, 
-                suffix_value endingPattern,
-                tandem_repeat_setting potentialTandemRepeats
-            ):
-                size_(size),
-                matchLength_(matchLength),
-                startingPattern_(startingPattern),
-                endingPattern_(endingPattern),
-                potentialTandemRepeats_(potentialTandemRepeats)
-            {
-            }
-
-            std::int32_t                 size_;
-            std::int32_t                 matchLength_;
-            suffix_value                startingPattern_;
-            suffix_value                endingPattern_;
-            tandem_repeat_setting   potentialTandemRepeats_;
         };
 
         struct tandem_repeat_info
@@ -192,20 +163,15 @@ namespace maniscalco
             suffix_index *,
             std::int32_t,
             suffix_value,
-            suffix_value,
-            std::vector<partition_info> &,
-            std::vector<tandem_repeat_info> &,
-            tandem_repeat_setting
+            std::array<suffix_value, 2>,
+            std::vector<tandem_repeat_info> &
         );
 
-        bool tandem_repeat_sort
+        std::size_t partition_tandem_repeats
         (
             suffix_index *,
             suffix_index *,
             std::int32_t,
-            suffix_value,
-            suffix_value,
-            std::vector<partition_info> &,
             std::vector<tandem_repeat_info> &
         );
 
@@ -248,14 +214,13 @@ namespace maniscalco
 
         void first_stage_its();
 
-        void multikey_quicksort
+        suffix_index * multikey_quicksort
         (
             suffix_index *,
             suffix_index *,
             std::int32_t,
             suffix_value,
-            suffix_value,
-            std::vector<partition_info> &,
+            std::array<suffix_value, 2>,
             std::vector<tandem_repeat_info> &
         );
 
@@ -266,11 +231,10 @@ namespace maniscalco
             int32_t *
         );
 
-        tandem_repeat_setting has_potential_tandem_repeats
+        bool has_potential_tandem_repeats
         (
-            std::int32_t,
             suffix_value,
-            std::array<suffix_value, 2> const &
+            std::array<suffix_value, 2>
         ) const;
 
         void complete_tandem_repeats

@@ -19,7 +19,7 @@ common_compiler_defines = [
 #===============================================================================
 # common compiler flags
 #===============================================================================
-common_compiler_flags = ['-std=c++11', '-rdynamic', '-pipe', '-Wall', '-Wextra', '-Wno-unused-function', '-fPIC']
+common_compiler_flags = ['-std=c++11', '-rdynamic', '-pipe', '-Wall', '-Wextra', '-Wno-unused-function']
 common_compiler_flags = common_compiler_flags + force_include_headers
 
 
