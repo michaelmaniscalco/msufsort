@@ -19,7 +19,7 @@ common_compiler_defines = [
 #===============================================================================
 # common compiler flags
 #===============================================================================
-common_compiler_flags = ['-std=c++11', '-rdynamic', '-pipe', '-Wall', '-Wextra', '-Wno-unused-function']
+common_compiler_flags = ['-std=c++11', '-pipe', '-Wall', '-Wextra']
 common_compiler_flags = common_compiler_flags + force_include_headers
 
 
@@ -71,7 +71,7 @@ common_env.Clean('.', build_dir)
 #===============================================================================
 # release build environment
 #===============================================================================
-release_compiler_flags = ['-g', '-O3', '-march=native', '-fno-stack-protector', '-funroll-loops', '-funsafe-loop-optimizations', '-pthread']
+release_compiler_flags = ['-g', '-O3', '-march=native', '-fno-stack-protector', '-funroll-loops',  '-pthread']
 release_compiler_defines = ['RELEASE']
 release_env = common_env.Clone()
 release_env.Append(CPPDEFINES = release_compiler_defines)
