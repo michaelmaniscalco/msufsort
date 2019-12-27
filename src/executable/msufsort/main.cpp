@@ -13,7 +13,7 @@ namespace
 {
 
     //==============================================================================
-    force_inline int32_t match_length
+    inline int32_t match_length
     (
         int8_t const * beginInput,
         int8_t const * endInput,
