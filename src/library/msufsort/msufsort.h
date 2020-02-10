@@ -32,6 +32,7 @@ SOFTWARE.
 #include <atomic>
 #include <thread>
 #include <memory>
+#include <array>
 #include <functional>
 
 
@@ -218,7 +219,7 @@ namespace maniscalco
         (
             suffix_index *,
             suffix_index *,
-            std::int32_t,
+            std::size_t,
             suffix_value,
             std::array<suffix_value, 2>,
             std::vector<tandem_repeat_info> &
@@ -385,6 +386,16 @@ namespace maniscalco
         std::unique_ptr<worker_thread []> workerThreads_;
 
         int32_t numWorkerThreads_;
+
+        struct stack_frame
+        {
+            suffix_index * suffixArrayBegin;
+            suffix_index * suffixArrayEnd;
+            std::size_t currentMatchLength;
+            suffix_value startingPattern;
+            std::array<suffix_value, 2> endingPattern;
+            std::vector<tandem_repeat_info> & tandemRepeatStack;
+        };
 
     }; // class msufsort
 
