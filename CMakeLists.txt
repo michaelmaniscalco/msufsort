@@ -27,7 +27,8 @@ target_link_libraries(msufsort_demo ${CMAKE_THREAD_LIBS_INIT} msufsort msufsort)
 set_target_properties(msufsort_demo PROPERTIES OUTPUT_NAME msufsort)
 
 install(TARGETS msufsort msufsort_demo
+    EXPORT msufsort-targets
     LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_PREFIX}/include/maniscalco/)
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_PREFIX}/include/maniscalco/
+    )
 
-export(PACKAGE msufsort)
