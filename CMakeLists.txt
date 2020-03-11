@@ -30,4 +30,4 @@ install(TARGETS msufsort msufsort_demo
     LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/
     PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_PREFIX}/include/maniscalco/)
 
-
+export(PACKAGE msufsort)
