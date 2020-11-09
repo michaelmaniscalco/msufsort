@@ -44,6 +44,7 @@ install(EXPORT msufsort-export
 )
 
 set(_msufsort_config "${CMAKE_CURRENT_BINARY_DIR}/msufsort-config.cmake")
+set(MSUFSORT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/")
 
 file(WRITE
     ${_msufsort_config}
