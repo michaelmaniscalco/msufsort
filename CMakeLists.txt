@@ -5,10 +5,10 @@ project(msufsort
 )
 
 set(CMAKE_CXX_STANDARD 20)
-
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
+message(STATUS "Build Type = ${CMAKE_BUILD_TYPE}")
 
 option(MSUFSORT_BUILD_DEMO "Build the CLI demo" OFF)
 
