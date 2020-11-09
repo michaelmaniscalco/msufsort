@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.16.3)
 
 project(msufsort
     LANGUAGES CXX
@@ -12,16 +12,11 @@ endif()
 
 option(MSUFSORT_BUILD_DEMO "Build the CLI demo" OFF)
 
-find_library(LIBCXX_LIB c++)
-find_package(Threads)
 add_compile_options(
     -O3
-    -g
     -march=native
 )
-link_libraries(
-    ${LIBCXX_LIB}
-)
+
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     add_compile_options(-stdlib=libc++)
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
