@@ -7,12 +7,9 @@ project(msufsort
 option(MSUFSORT_BUILD_DEMO "Build the CLI demo" OFF)
 
 if (MSUFSORT_BUILD_DEMO)
-    set(CMAKE_BUILD_TYPE Release)
-    set(CMAKE_CXX_COMPILER "clang++") 
     find_library(LIBCXX_LIB c++)
     find_package(Threads)
     add_compile_options(
-        -stdlib=libc++
         -O3
         -g
         -march=native
@@ -20,6 +17,12 @@ if (MSUFSORT_BUILD_DEMO)
     link_libraries(
         ${LIBCXX_LIB}
     )
+    if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+        add_compile_options(-stdlib=libc++)
+    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
+    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+    endif()
 endif()
 
 add_subdirectory(src)
@@ -44,6 +47,7 @@ install(EXPORT msufsort-export
 )
 
 set(_msufsort_config "${CMAKE_CURRENT_BINARY_DIR}/msufsort-config.cmake")
+set(MSUFSORT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/")
 
 file(WRITE
     ${_msufsort_config}
