@@ -18,3 +18,11 @@ cmake ..
 make
 ```
 
+To build demo:
+
+```
+mkdir build
+cd build
+cmake -DMSUFSORT_BUILD_DEMO=ON ..
+make 
+```
