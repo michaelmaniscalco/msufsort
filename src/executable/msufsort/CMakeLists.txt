@@ -15,4 +15,4 @@ link_libraries(
 
 add_executable(msufsort_demo main.cpp)
 
-target_link_libraries(msufsort_demo ${CMAKE_THREAD_LIBS_INIT} msufsort msufsort)
+target_link_libraries(msufsort_demo ${CMAKE_THREAD_LIBS_INIT} msufsort)
