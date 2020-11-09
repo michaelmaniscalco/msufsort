@@ -1,39 +1,63 @@
-cmake_minimum_required(VERSION 3.5.1)
+cmake_minimum_required(VERSION 3.8)
 
-set(CMAKE_INSTALL_PREFIX /usr/local)
-set(PROJECT_NAME msufsort)
-project(${PROJECT_NAME})
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_BUILD_TYPE Release)
-
-add_compile_options(
-    -O3
-    -march=native
-    -pipe
+project(msufsort
+    LANGUAGES CXX
 )
 
-find_package(Threads)
+option(MSUFSORT_BUILD_DEMO "Build the CLI demo" ON)
 
-include_directories(./src)
-
-file(GLOB SOURCES ./src/library/msufsort/*.cpp)
-
-add_library(msufsort STATIC ${SOURCES})
-set_target_properties(msufsort PROPERTIES PUBLIC_HEADER ./src/library/msufsort/msufsort.h)
-
-add_executable(msufsort_demo ./src/executable/msufsort/main.cpp)
-
-target_link_libraries(msufsort_demo ${CMAKE_THREAD_LIBS_INIT} msufsort msufsort)
-set_target_properties(msufsort_demo PROPERTIES OUTPUT_NAME msufsort)
-
-install(TARGETS msufsort msufsort_demo
-    EXPORT msufsort-targets
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/
-    ARCHIVE DESTINATION lib
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_PREFIX}/include/maniscalco/
+if (MSUFSORT_BUILD_DEMO)
+    set(CMAKE_BUILD_TYPE Release)
+    set(CMAKE_CXX_COMPILER "clang++") 
+    find_library(LIBCXX_LIB c++)
+    find_package(Threads)
+    add_compile_options(
+        -stdlib=libc++
+        -O3
+        -g
+        -march=native
     )
+    link_libraries(
+        ${LIBCXX_LIB}
+    )
+endif()
 
-export(EXPORT ${PROJECT_NAME}-targets FILE ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-targets.cmake)
-export(PACKAGE ${PROJECT_NAME})
+add_subdirectory(src)
+
+include(GNUInstallDirs)
+
+install(
+    TARGETS msufsort
+    EXPORT msufsort-export
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(EXPORT msufsort-export
+    FILE
+        msufsortTargets.cmake
+    NAMESPACE
+        msufsort::
+    DESTINATION
+        ${CMAKE_INSTALL_LIBDIR}/cmake/msufsort
+)
+
+set(_msufsort_config "${CMAKE_CURRENT_BINARY_DIR}/msufsort-config.cmake")
+
+file(WRITE
+    ${_msufsort_config}
+    "include(\"\${CMAKE_CURRENT_LIST_DIR}/msufsortTargets.cmake\")"
+)
+
+install(
+    FILES ${_msufsort_config}
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/msufsort
+)
+
+install(
+    DIRECTORY
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/library/msufsort
+    DESTINATION include/msufsort/
+    FILES_MATCHING PATTERN "*.h"
+)
