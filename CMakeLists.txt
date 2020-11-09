@@ -4,25 +4,29 @@ project(msufsort
     LANGUAGES CXX
 )
 
+set(CMAKE_CXX_STANDARD 20)
+
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
 option(MSUFSORT_BUILD_DEMO "Build the CLI demo" OFF)
 
-if (MSUFSORT_BUILD_DEMO)
-    find_library(LIBCXX_LIB c++)
-    find_package(Threads)
-    add_compile_options(
-        -O3
-        -g
-        -march=native
-    )
-    link_libraries(
-        ${LIBCXX_LIB}
-    )
-    if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-        add_compile_options(-stdlib=libc++)
-    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
-    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-    endif()
+find_library(LIBCXX_LIB c++)
+find_package(Threads)
+add_compile_options(
+    -O3
+    -g
+    -march=native
+)
+link_libraries(
+    ${LIBCXX_LIB}
+)
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    add_compile_options(-stdlib=libc++)
+elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
+elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 endif()
 
 add_subdirectory(src)
