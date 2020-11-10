@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.16.3)
 
 project(msufsort)
 
-set(CMAKE_CXX_STANDARD 20)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
@@ -13,14 +12,6 @@ add_compile_options(
     -O3
     -march=native
 )
-
-if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-    add_compile_options(-stdlib=libc++)
-elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-    add_compile_options(-lstdc++)
-elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
-elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-endif()
 
 add_subdirectory(src)
 
@@ -44,7 +35,6 @@ install(EXPORT msufsort-export
 )
 
 set(_msufsort_config "${CMAKE_CURRENT_BINARY_DIR}/msufsort-config.cmake")
-set(MSUFSORT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/")
 
 file(WRITE
     ${_msufsort_config}
