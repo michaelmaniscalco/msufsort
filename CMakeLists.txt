@@ -29,7 +29,7 @@ install(EXPORT msufsort-export
     FILE
         msufsortTargets.cmake
     NAMESPACE
-        msufsort::
+        maniscalco::
     DESTINATION
         ${CMAKE_INSTALL_LIBDIR}/cmake/msufsort
 )
@@ -49,6 +49,6 @@ install(
 install(
     DIRECTORY
         ${CMAKE_CURRENT_SOURCE_DIR}/src/library/msufsort
-    DESTINATION include/msufsort/
+    DESTINATION include/msufsort
     FILES_MATCHING PATTERN "*.h"
 )
