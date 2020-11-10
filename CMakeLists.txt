@@ -17,6 +17,7 @@ add_compile_options(
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     add_compile_options(-stdlib=libc++)
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    add_compile_options(-lstdc++)
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 endif()
