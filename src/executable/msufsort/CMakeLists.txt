@@ -3,11 +3,6 @@ find_library(LIBCXX_LIB c++)
 find_package(Threads)
 find_library(LIBCXXABI_LIB c++abi)
 
-add_compile_options(
-    -O3
-    -march=native
-)
-
 link_libraries(
     ${LIBCXX_LIB}
     ${LIBCXXABI_LIB}
