@@ -2,6 +2,8 @@ add_library(msufsort
     msufsort/msufsort.cpp
 )
 
+target_link_libraries(msufsort ${CMAKE_THREAD_LIBS_INIT})
+
 target_include_directories(msufsort
     PUBLIC
         $<BUILD_INTERFACE:${_msufsort_include_dir}>

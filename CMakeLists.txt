@@ -4,51 +4,27 @@ project(msufsort)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
+    message("*** Build type not set.  defaulting to Release")
+endif()
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(
+        -g
+        -O0
+        -march=native
+    )
+else()
+    add_compile_options(
+        -O3
+        -march=native
+    )
 endif()
 
 option(MSUFSORT_BUILD_DEMO "Build the CLI demo" OFF)
 
-add_compile_options(
-    -O3
-    -march=native
-)
-
 add_subdirectory(src)
 
-include(GNUInstallDirs)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-install(
-    TARGETS msufsort
-    EXPORT msufsort-export
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
-install(EXPORT msufsort-export
-    FILE
-        msufsortTargets.cmake
-    NAMESPACE
-        maniscalco::
-    DESTINATION
-        ${CMAKE_INSTALL_LIBDIR}/cmake/msufsort
-)
-
-set(_msufsort_config "${CMAKE_CURRENT_BINARY_DIR}/msufsort-config.cmake")
-
-file(WRITE
-    ${_msufsort_config}
-    "include(\"\${CMAKE_CURRENT_LIST_DIR}/msufsortTargets.cmake\")"
-)
-
-install(
-    FILES ${_msufsort_config}
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/msufsort
-)
-
-install(
-    DIRECTORY
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/library/msufsort
-    DESTINATION include/msufsort
-    FILES_MATCHING PATTERN "*.h"
-)
