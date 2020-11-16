@@ -23,7 +23,7 @@ SOFTWARE.
 */
 
 
-#define VERBOSE
+//#define VERBOSE
 
 #include "./msufsort.h"
 #include <include/endian.h>
